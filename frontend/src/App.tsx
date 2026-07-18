@@ -1,31 +1,30 @@
 import './index.css';
+import DocumentViewer from './components/DocumentViewer';
+import DataChecker from './components/DataChecker';
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl p-8 max-w-2xl w-full">
-        <header className="mb-8 border-b pb-4">
-          <h1 className="text-3xl font-bold text-gray-800">Cartório AI Dashboard</h1>
-          <p className="text-gray-500 mt-2">Zero-Hallucination Data Verification Engine</p>
-        </header>
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      <header className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Cartório AI Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1 font-medium">Zero-Hallucination Data Verification Engine</p>
+        </div>
+        <div className="flex items-center space-x-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
+          <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
+          <span className="text-green-700 text-sm font-semibold">System Operational</span>
+        </div>
+      </header>
 
-        <main className="space-y-6">
-          <section className="bg-blue-50 border border-blue-200 rounded p-4">
-            <h2 className="text-xl font-semibold text-blue-800 mb-2">System Status</h2>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-green-700 font-medium">All systems operational</span>
-            </div>
-          </section>
+      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-88px)]">
+        <section className="h-full">
+          <DocumentViewer />
+        </section>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-700 mb-3">Pending Validations</h2>
-            <div className="bg-gray-50 border rounded text-center p-8 text-gray-500">
-              No documents pending validation at this time.
-            </div>
-          </section>
-        </main>
-      </div>
+        <section className="h-full">
+          <DataChecker />
+        </section>
+      </main>
     </div>
   );
 }
