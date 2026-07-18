@@ -1,12 +1,24 @@
 import json
-from firebase_functions import https_fn
+import os
+from firebase_functions import https_fn, options
 from firebase_admin import initialize_app
 
 from core.validator import DocumentValidator
 
 initialize_app()
 
-@https_fn.on_request()
+def get_cors_origins():
+    origins = os.environ.get("CORS_ORIGINS", "*")
+    if origins == "*":
+        return origins
+    return [origin.strip() for origin in origins.split(",") if origin.strip()]
+
+cors_options = options.CorsOptions(
+    cors_origins=get_cors_origins(),
+    cors_methods=["GET", "POST", "OPTIONS"]
+)
+
+@https_fn.on_request(cors=cors_options)
 def api_status(req: https_fn.Request) -> https_fn.Response:
     """Returns the API status."""
     return https_fn.Response(
@@ -14,7 +26,7 @@ def api_status(req: https_fn.Request) -> https_fn.Response:
         content_type="application/json"
     )
 
-@https_fn.on_request()
+@https_fn.on_request(cors=cors_options)
 def validate_document_text(req: https_fn.Request) -> https_fn.Response:
     """
     Validates typed text against ground truth deterministically.

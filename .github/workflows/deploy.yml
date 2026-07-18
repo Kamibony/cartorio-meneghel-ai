@@ -50,7 +50,7 @@ jobs:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
           channelId: live
-          projectId: your-firebase-project-id # IMPORTANT: Replace this or pass dynamically!
+          projectId: '${{ secrets.FIREBASE_PROJECT_ID }}'
 
   deploy-functions:
     needs: changes
@@ -76,6 +76,7 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-key.json
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: |
           echo "$SA_KEY" > /tmp/firebase-key.json
-          firebase deploy --only functions --project your-firebase-project-id
+          firebase deploy --only functions --project "$FIREBASE_PROJECT_ID"
