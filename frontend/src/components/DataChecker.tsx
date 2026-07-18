@@ -35,25 +35,10 @@ const DataChecker: React.FC = () => {
     setServerError(null);
 
     try {
-      // In production, the API endpoint path would be configured according to environments.
-      // Assuming a relative path mapping, proxy, or same-domain deployment under https://us-central1-cartorio-ai.cloudfunctions.net/validate_document_text
-      // As specified in firebase.json functions are under /functions but since rewrites point ** to index.html,
-      // typical Cloud Functions endpoints are hosted directly at the function name or /api/function_name.
-      // In Firebase Hosting with functions, you can rewrite to a function.
-      // We will assume the endpoint is deployed and accessible via its path or proxy.
-      // If deployed together with hosting, it might be mapped to `https://us-central1-cartorio-ai.cloudfunctions.net/validate_document_text` or `/apihttps://us-central1-cartorio-ai.cloudfunctions.net/validate_document_text`
-      // Let's use an absolute URL if needed, but since it's an API, let's just point to `/apihttps://us-central1-cartorio-ai.cloudfunctions.net/validate_document_text`
-      // Wait, firebase functions local emulator typically requires full URL or mapping.
-      // According to typical Firebase setup: we'll call `https://us-central1-cartorio-ai.cloudfunctions.net/validate_document_text`.
-      // Assuming firebase rewrite is set up to point to the function, but since we don't know the exact production URL,
-      // let's use a standard Vite proxy setup for local dev, and assume it will be deployed to the same origin.
-      // Usually Firebase Hosting rewrites look like: { "source": "/api/**", "function": "validate_document_text" }
-      // The prompt says "The backend deterministic validation endpoint (validate_document_text) is deployed."
-      // Since it's a relative call, let's just use the function name if deployed in the same project,
-      // or we can just proxy it during dev in vite.config.ts if needed.
-      // Let's use `/validate_document_text` but rewrite our firebase.json for local emulator or deployment if needed,
-      // or simply leave it as an environment variable. We will just use the `/validate_document_text` endpoint relative to the domain.
-      const response = await fetch('/validate_document_text', {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const endpoint = `${apiUrl}/validate_document_text`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
