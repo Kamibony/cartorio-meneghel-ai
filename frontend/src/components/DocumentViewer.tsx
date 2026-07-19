@@ -1,13 +1,95 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
+import { useDocumentUpload } from '../hooks/useDocumentUpload';
 
-const DocumentViewer: React.FC = () => {
+interface DocumentViewerProps {
+  onDataExtracted: (data: any) => void;
+}
+
+const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const { uploadAndExtract, isUploading, isExtracting, error } = useDocumentUpload();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+    const extractedData = await uploadAndExtract(selectedFile);
+    if (extractedData) {
+      onDataExtracted(extractedData);
+    }
+  };
+
   return (
     <div className="h-full bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden flex flex-col">
       <div className="bg-gray-100 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-700">Scanned Document (Source of Truth)</h2>
-        <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">Mock UI</span>
+        {isExtracting ? (
+          <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2.5 py-0.5 rounded flex items-center">
+            <svg className="animate-spin h-3 w-3 mr-1 text-yellow-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Lendo documento...
+          </span>
+        ) : (
+          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">Live UI</span>
+        )}
       </div>
-      <div className="flex-1 p-6 bg-gray-50 flex items-center justify-center overflow-auto">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-4">
+        <input
+          type="file"
+          accept="image/*,application/pdf"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading || isExtracting}
+          className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Select File
+        </button>
+        <span className="text-sm text-gray-600 truncate max-w-xs">
+          {selectedFile ? selectedFile.name : 'No file selected'}
+        </span>
+        <button
+          onClick={handleUpload}
+          disabled={!selectedFile || isUploading || isExtracting}
+          className="ml-auto px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+        >
+          {isUploading ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Uploading...
+            </>
+          ) : 'Upload & Extract'}
+        </button>
+      </div>
+      {error && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+      <div className="flex-1 p-6 bg-gray-50 flex items-center justify-center overflow-auto relative">
+        {(isUploading || isExtracting) && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+            <svg className="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-gray-700 font-medium">{isExtracting ? 'Extraindo dados com IA...' : 'Fazendo upload...'}</p>
+            {isExtracting && <p className="text-sm text-gray-500 mt-2">Isso pode levar alguns segundos dependendo do documento.</p>}
+          </div>
+        )}
         {/* Mock ID Card Container */}
         <div className="w-full max-w-md bg-white border border-gray-300 rounded-xl shadow-md p-6 relative">
           <div className="absolute top-0 left-0 w-full h-4 bg-green-700 rounded-t-xl"></div>
