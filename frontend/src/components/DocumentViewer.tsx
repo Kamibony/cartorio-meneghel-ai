@@ -72,11 +72,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     const fileToProcess = files.find(f => f.id === id);
     if (!fileToProcess) return;
 
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'uploading' } : f));
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'uploading' as const } : f));
 
     // Simulating transition to extracting state after a short delay since our hook combines them
     setTimeout(() => {
-        setFiles(prev => prev.map(f => f.id === id && f.status === 'uploading' ? { ...f, status: 'extracting' } : f));
+        setFiles(prev => prev.map(f => f.id === id && f.status === 'uploading' ? { ...f, status: 'extracting' as const } : f));
     }, 1000);
 
     try {
@@ -84,7 +84,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
 
       setFiles(prev => {
         const newFiles = prev.map(f =>
-          f.id === id ? { ...f, status: 'completed', data: extractedData } : f
+          f.id === id ? { ...f, status: 'completed' as const, data: extractedData } : f
         );
         updateUnifiedGroundTruth(newFiles);
         return newFiles;
@@ -92,7 +92,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
 
     } catch (err: any) {
       setFiles(prev => prev.map(f =>
-        f.id === id ? { ...f, status: 'error', error: err.message || 'Erro desconhecido' } : f
+        f.id === id ? { ...f, status: 'error' as const, error: err.message || 'Erro desconhecido' } : f
       ));
     }
   };
