@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ref, uploadBytes } from 'firebase/storage';
 import { storage } from '../utils/firebase';
+import { ENV } from '../config/env';
 
 export function useDocumentUpload() {
   const [isUploading, setIsUploading] = useState(false);
@@ -28,7 +29,7 @@ export function useDocumentUpload() {
       setIsExtracting(true);
 
       // 2. Call backend extract_document_data API
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/extract_document_data`;
 
       const response = await fetch(endpoint, {

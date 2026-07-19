@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
+import { ENV } from '../config/env';
 
 // Type definitions for the expected API response
 interface ValidationError {
@@ -56,7 +57,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
          throw new Error('O texto para validação não pode estar vazio.');
       }
 
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/validate_document_text`;
 
       const response = await fetch(endpoint, {

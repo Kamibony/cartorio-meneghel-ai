@@ -1,14 +1,23 @@
 import { initializeApp } from 'firebase/app';
-import { getStorage } from 'firebase/storage';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { ENV } from '../config/env';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "mock-key",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "cartorio-meneghel-ai.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "cartorio-meneghel-ai",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "cartorio-meneghel-ai.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "mock-sender-id",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "mock-app-id",
-};
-
-export const app = initializeApp(firebaseConfig);
+export const app = initializeApp(ENV.firebase);
 export const storage = getStorage(app);
+
+// Strict emulator isolation pattern
+if (ENV.isDev) {
+    const configuredUrl = import.meta.env.VITE_API_URL || '';
+    if (configuredUrl.includes('127.0.0.1') || configuredUrl.includes('localhost')) {
+        // Extract host for emulator connection
+        const host = configuredUrl.includes('127.0.0.1') ? '127.0.0.1' : 'localhost';
+
+        console.info(`[Dev Mode] Connecting to Firebase Emulators on ${host}...`);
+
+        // Connect storage emulator.
+        // Default Storage Emulator port is 9199.
+        connectStorageEmulator(storage, host, 9199);
+
+        // If Firestore or Auth emulators are added in the future, connect them here.
+    }
+}
