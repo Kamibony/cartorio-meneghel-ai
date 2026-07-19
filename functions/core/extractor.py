@@ -63,6 +63,10 @@ class IdentityExtractor(DocumentExtractor):
             mime_type = "image/jpeg"
         elif gcs_uri.lower().endswith(".png"):
             mime_type = "image/png"
+        elif gcs_uri.lower().endswith(".doc") or gcs_uri.lower().endswith(".docx"):
+            # Vertex AI supports Word docs as application/msword or application/vnd.openxmlformats-officedocument.wordprocessingml.document
+            # but we can try generic octet-stream or specific if needed. Let's use the standard ones:
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if gcs_uri.lower().endswith(".docx") else "application/msword"
 
         gcs_doc = documentai.GcsDocument(gcs_uri=gcs_uri, mime_type=mime_type)
         request = documentai.ProcessRequest(
@@ -112,6 +116,8 @@ class ComplexDocumentExtractor(DocumentExtractor):
             mime_type = "image/jpeg"
         elif gcs_uri.lower().endswith(".png"):
             mime_type = "image/png"
+        elif gcs_uri.lower().endswith(".doc") or gcs_uri.lower().endswith(".docx"):
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if gcs_uri.lower().endswith(".docx") else "application/msword"
 
         file_part = Part.from_uri(uri=gcs_uri, mime_type=mime_type)
 
@@ -137,6 +143,70 @@ class ComplexDocumentExtractor(DocumentExtractor):
             raise ValueError(f"Failed to parse JSON response from Vertex AI. Response was: {response.text}")
 
 
+class DraftExtractor(DocumentExtractor):
+    """
+    Extractor for draft documents (Minuta) using Vertex AI with Gemini 2.5 Flash
+    to extract the full raw text.
+    """
+
+    def __init__(self) -> None:
+        """Initializes the DraftExtractor."""
+        self.project_id = os.environ.get("FIREBASE_PROJECT_ID")
+        self.location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+
+        if not self.project_id:
+            raise ValueError("FIREBASE_PROJECT_ID environment variable must be set.")
+
+        vertexai.init(project=self.project_id, location=self.location)
+        self.model = GenerativeModel("gemini-2.5-flash")
+
+    def extract(self, gcs_uri: str) -> Dict[str, Any]:
+        """
+        Extracts raw text using Vertex AI Gemini model.
+
+        Args:
+            gcs_uri (str): The GCS URI of the document.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the extracted raw text {"text": "..."}.
+        """
+        mime_type = "application/pdf"
+        if gcs_uri.lower().endswith(".jpg") or gcs_uri.lower().endswith(".jpeg"):
+            mime_type = "image/jpeg"
+        elif gcs_uri.lower().endswith(".png"):
+            mime_type = "image/png"
+        elif gcs_uri.lower().endswith(".doc") or gcs_uri.lower().endswith(".docx"):
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if gcs_uri.lower().endswith(".docx") else "application/msword"
+
+        file_part = Part.from_uri(uri=gcs_uri, mime_type=mime_type)
+
+        prompt = (
+            "Extract the full raw text from this document. "
+            "Return the data strictly as a valid JSON object with a single key 'text' containing the extracted text. "
+            "Do not include markdown blocks or any other text outside the JSON."
+        )
+
+        response = self.model.generate_content(
+            [file_part, prompt],
+            generation_config=GenerationConfig(
+                response_mime_type="application/json"
+            )
+        )
+
+        if not response.text:
+            raise ValueError("Empty response received from Vertex AI.")
+
+        try:
+            result = json.loads(response.text)
+            if "text" not in result:
+                 # Fallback if the model returns something else
+                 return {"text": response.text}
+            return result
+        except json.JSONDecodeError:
+            # If the model fails to return strict JSON, wrap it.
+            return {"text": response.text}
+
+
 def get_extractor(document_type: str) -> DocumentExtractor:
     """
     Router/Factory to get the appropriate extractor based on document type.
@@ -152,6 +222,7 @@ def get_extractor(document_type: str) -> DocumentExtractor:
     """
     identity_types = {"CNH", "RG"}
     complex_types = {"CERTIDAO", "IPTU"}
+    draft_types = {"DRAFT", "MINUTA"}
 
     doc_type_upper = document_type.upper()
 
@@ -159,5 +230,7 @@ def get_extractor(document_type: str) -> DocumentExtractor:
         return IdentityExtractor()
     elif doc_type_upper in complex_types:
         return ComplexDocumentExtractor()
+    elif doc_type_upper in draft_types:
+        return DraftExtractor()
     else:
         raise ValueError(f"Unsupported document type: {document_type}")

@@ -7,7 +7,7 @@ export function useDocumentUpload() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const uploadAndExtract = async (file: File) => {
+  const uploadAndExtract = async (file: File, documentType: string = 'id_card') => {
     setIsUploading(true);
     setIsExtracting(false);
     setError(null);
@@ -38,7 +38,7 @@ export function useDocumentUpload() {
         },
         body: JSON.stringify({
           gcs_uri: gcsUri,
-          document_type: 'id_card', // Based on the prompt, it could be standard IDs, etc.
+          document_type: documentType,
         }),
       });
 
