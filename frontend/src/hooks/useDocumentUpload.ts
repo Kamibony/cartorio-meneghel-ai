@@ -53,6 +53,7 @@ export function useDocumentUpload() {
     } catch (err: any) {
       console.error('Upload/Extraction error:', err);
       setError(err.message || 'An unknown error occurred');
+      throw err;
     } finally {
       setIsUploading(false);
       setIsExtracting(false);
