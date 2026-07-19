@@ -13,17 +13,11 @@ interface ValidationResponse {
   error?: string;
 }
 
-const MOCK_GROUND_TRUTH = {
-  nome: "JOAO DA SILVA",
-  cpf: "702.478.934-47",
-  rg: "4054425",
-  nome_mae: "CAMILA FIGUEIREDO ROCHA",
-  nome_pai: "CARLOS DA SILVA",
-  data_nascimento: "15/05/1985",
-  naturalidade: "SÃO PAULO - SP"
-};
+interface DataCheckerProps {
+  groundTruth: any;
+}
 
-const DataChecker: React.FC = () => {
+const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [typedText, setTypedText] = useState<string>('');
   const [isValidating, setIsValidating] = useState<boolean>(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[] | null>(null);
@@ -44,7 +38,7 @@ const DataChecker: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ground_truth: MOCK_GROUND_TRUTH,
+          ground_truth: groundTruth,
           typed_text: typedText,
         }),
       });
@@ -83,13 +77,18 @@ const DataChecker: React.FC = () => {
           disabled={isValidating}
         />
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex justify-between items-center">
+          {!groundTruth && (
+            <span className="text-sm text-yellow-600 bg-yellow-50 px-2 py-1 rounded border border-yellow-200">
+              Please upload and extract a document first.
+            </span>
+          )}
           <button
             type="button"
             onClick={handleValidate}
-            disabled={isValidating || !typedText.trim()}
-            className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
-              isValidating || !typedText.trim()
+            disabled={isValidating || !typedText.trim() || !groundTruth}
+            className={`ml-auto inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
+              isValidating || !typedText.trim() || !groundTruth
                 ? 'bg-blue-400 cursor-not-allowed'
                 : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
             }`}
