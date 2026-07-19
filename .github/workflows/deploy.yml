@@ -50,7 +50,7 @@ jobs:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
           channelId: live
-          projectId: '${{ secrets.FIREBASE_PROJECT_ID }}'
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
 
   deploy-functions:
     needs: changes
@@ -76,7 +76,7 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-key.json
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
         run: |
           echo "$SA_KEY" > /tmp/firebase-key.json
           firebase deploy --only functions --project "$FIREBASE_PROJECT_ID"
