@@ -5,10 +5,16 @@ from firebase_admin import initialize_app
 
 from core.validator import DocumentValidator
 from core.extractor import get_extractor
+from core.audit import log_audit_event_async
 
 initialize_app()
 
-@https_fn.on_request()
+cors_options = options.CorsOptions(
+    cors_origins=["*"],
+    cors_methods=["GET", "POST", "OPTIONS"]
+)
+
+@https_fn.on_request(cors=cors_options)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data from a document stored in GCS.
@@ -77,7 +83,73 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_request()
+@https_fn.on_request(cors=cors_options)
+def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
+    """
+    Accepts feedback on document validation and logs it asynchronously to Firestore.
+    Accepts POST requests with JSON payload containing:
+    - document_id (optional, string)
+    - document_type (string)
+    - ai_detected (dict)
+    - user_corrected (dict)
+    - validation_errors (list)
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    try:
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing JSON payload"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        # Validate required fields
+        if "document_type" not in data or "ai_detected" not in data or "user_corrected" not in data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing required fields: document_type, ai_detected, user_corrected"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        if not isinstance(data.get("ai_detected"), dict) or not isinstance(data.get("user_corrected"), dict):
+            return https_fn.Response(
+                json.dumps({"error": "ai_detected and user_corrected must be dictionaries"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        event_data = {
+            "document_id": data.get("document_id", "unknown"),
+            "document_type": data.get("document_type"),
+            "ai_detected": data.get("ai_detected"),
+            "user_corrected": data.get("user_corrected"),
+            "validation_errors": data.get("validation_errors", [])
+        }
+
+        # Asynchronously log the event to Firestore
+        log_audit_event_async(event_data)
+
+        # Return 200 OK immediately
+        return https_fn.Response(
+            json.dumps({"status": "success", "message": "Audit event submitted"}),
+            status=200,
+            content_type="application/json"
+        )
+    except Exception as e:
+        return https_fn.Response(
+            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            status=500,
+            content_type="application/json"
+        )
+
+@https_fn.on_request(cors=cors_options)
 def api_status(req: https_fn.Request) -> https_fn.Response:
     """Returns the API status."""
     return https_fn.Response(
