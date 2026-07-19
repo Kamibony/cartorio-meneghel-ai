@@ -1,7 +1,9 @@
 import json
 import os
 from firebase_functions import https_fn, options
-from firebase_admin import initialize_app
+from firebase_admin import initialize_app, firestore
+
+cors_options = options.CorsOptions(cors_origins=os.environ.get("CORS_ORIGINS", "*").split(","))
 
 from core.validator import DocumentValidator
 from core.extractor import get_extractor
@@ -122,6 +124,69 @@ def validate_document_text(req: https_fn.Request) -> https_fn.Response:
 
         return https_fn.Response(
             json.dumps({"status": "success", "errors": errors}),
+            status=200,
+            content_type="application/json"
+        )
+    except Exception as e:
+        return https_fn.Response(
+            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            status=500,
+            content_type="application/json"
+        )
+@https_fn.on_request(cors=cors_options)
+def log_audit_event(req: https_fn.Request) -> https_fn.Response:
+    """
+    Logs an audit event, such as marking a document as unreadable.
+    Accepts POST requests with JSON payload: {"file_name": "...", "quality_flag": true/false}
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    try:
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing JSON payload"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        file_name = data.get("file_name")
+        quality_flag = data.get("quality_flag")
+
+        if not file_name or not isinstance(file_name, str):
+            return https_fn.Response(
+                json.dumps({"error": "Missing or invalid file_name"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        if quality_flag is None or not isinstance(quality_flag, bool):
+            return https_fn.Response(
+                json.dumps({"error": "Missing or invalid quality_flag (must be boolean)"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        db = firestore.client()
+
+        # Determine the project ID from env, or use the fallback
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+
+        doc_ref = db.collection("audit_logs").document()
+        doc_ref.set({
+            "file_name": file_name,
+            "quality_flag": quality_flag,
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "project_id": project_id
+        })
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "message": "Audit event logged successfully"}),
             status=200,
             content_type="application/json"
         )

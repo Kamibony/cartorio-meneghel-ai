@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
+import { useAuditLog } from '../hooks/useAuditLog';
 
 interface DocumentViewerProps {
   onDataExtracted: (data: any) => void;
@@ -9,12 +10,27 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { uploadAndExtract, isUploading, isExtracting, error } = useDocumentUpload();
+  const { logAuditEvent, isLogging, logError, logSuccess } = useAuditLog();
+  const [unreadableMarked, setUnreadableMarked] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
+      setUnreadableMarked(false); // Reset mark when a new file is selected
     }
   };
+
+  const handleMarkAsUnreadable = () => {
+    if (selectedFile && !unreadableMarked) {
+      logAuditEvent(selectedFile.name, true);
+    }
+  };
+
+  useEffect(() => {
+    if (logSuccess) {
+      setUnreadableMarked(true);
+    }
+  }, [logSuccess]);
 
   const handleUpload = async () => {
     if (!selectedFile) return;
@@ -58,25 +74,41 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
         <span className="text-sm text-gray-600 truncate max-w-xs">
           {selectedFile ? selectedFile.name : 'No file selected'}
         </span>
-        <button
-          onClick={handleUpload}
-          disabled={!selectedFile || isUploading || isExtracting}
-          className="ml-auto px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-        >
-          {isUploading ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Uploading...
-            </>
-          ) : 'Upload & Extract'}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {selectedFile && (
+            <button
+              onClick={handleMarkAsUnreadable}
+              disabled={isLogging || unreadableMarked || isUploading || isExtracting}
+              className="px-4 py-2 bg-red-100 border border-transparent rounded-md shadow-sm text-sm font-medium text-red-700 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              {isLogging ? 'Marcando...' : (unreadableMarked ? 'Marcado como Ilegível' : 'Marcar como Ilegível')}
+            </button>
+          )}
+          <button
+            onClick={handleUpload}
+            disabled={!selectedFile || isUploading || isExtracting}
+            className="px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+          >
+            {isUploading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Uploading...
+              </>
+            ) : 'Upload & Extract'}
+          </button>
+        </div>
       </div>
-      {error && (
+      {(error || logError) && (
         <div className="bg-red-50 border-b border-red-200 px-4 py-2">
-          <p className="text-sm text-red-600">{error}</p>
+          <p className="text-sm text-red-600">{error || logError}</p>
+        </div>
+      )}
+      {unreadableMarked && !logError && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
+          <p className="text-sm text-yellow-700">Documento marcado como ilegível e reportado com sucesso.</p>
         </div>
       )}
       <div className="flex-1 p-6 bg-gray-50 flex items-center justify-center overflow-auto relative">
