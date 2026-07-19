@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ENV } from '../config/env';
 
 export function useAuditLog() {
   const [isLogging, setIsLogging] = useState(false);
@@ -11,7 +12,7 @@ export function useAuditLog() {
     setLogSuccess(false);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/log_audit_event`;
 
       const response = await fetch(endpoint, {
