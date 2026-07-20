@@ -35,7 +35,7 @@ class IdentityExtractor(DocumentExtractor):
 
     def __init__(self) -> None:
         """Initializes the IdentityExtractor."""
-        self.project_id = os.environ.get("FIREBASE_PROJECT_ID")
+        self.project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
         self.location = os.environ.get("DOCUMENT_AI_LOCATION", "us")
         self.processor_id = os.environ.get("DOCUMENT_AI_PROCESSOR_ID")
 
@@ -92,7 +92,7 @@ class ComplexDocumentExtractor(DocumentExtractor):
 
     def __init__(self) -> None:
         """Initializes the ComplexDocumentExtractor."""
-        self.project_id = os.environ.get("FIREBASE_PROJECT_ID")
+        self.project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
         self.location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
 
         if not self.project_id:
@@ -151,7 +151,7 @@ class DraftExtractor(DocumentExtractor):
 
     def __init__(self) -> None:
         """Initializes the DraftExtractor."""
-        self.project_id = os.environ.get("FIREBASE_PROJECT_ID")
+        self.project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
         self.location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
 
         if not self.project_id:
