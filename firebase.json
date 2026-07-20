@@ -8,6 +8,26 @@
     ],
     "rewrites": [
       {
+        "source": "/api/extract_document_data",
+        "function": "extract_document_data"
+      },
+      {
+        "source": "/api/submit_audit_event",
+        "function": "submit_audit_event"
+      },
+      {
+        "source": "/api/api_status",
+        "function": "api_status"
+      },
+      {
+        "source": "/api/validate_document_text",
+        "function": "validate_document_text"
+      },
+      {
+        "source": "/api/log_audit_event",
+        "function": "log_audit_event"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
