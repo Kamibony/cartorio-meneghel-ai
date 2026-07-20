@@ -74,4 +74,4 @@ jobs:
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
         run: |
-          firebase deploy --only functions --project "$FIREBASE_PROJECT_ID"
+          firebase deploy --only functions --force --project "$FIREBASE_PROJECT_ID"
