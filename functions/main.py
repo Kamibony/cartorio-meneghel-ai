@@ -2,19 +2,26 @@ import json
 import os
 from firebase_functions import https_fn, options
 from firebase_admin import initialize_app, firestore
+import firebase_admin
 
-cors_options = options.CorsOptions(cors_origins=os.environ.get("CORS_ORIGINS", "*").split(","))
+# Retrieve origins from env, defaulting to '*'
+origins_str = os.environ.get("CORS_ORIGINS", "*")
+origins = origins_str.split(",")
+
+cors_options = options.CorsOptions(
+    cors_origins=origins,
+    cors_methods=["GET", "POST", "OPTIONS"]
+)
 
 from core.validator import DocumentValidator
 from core.extractor import get_extractor
 from core.audit import log_audit_event_async
 
-initialize_app()
-
-cors_options = options.CorsOptions(
-    cors_origins=["*"],
-    cors_methods=["GET", "POST", "OPTIONS"]
-)
+if not firebase_admin._apps:
+    try:
+        initialize_app()
+    except ValueError:
+        pass
 
 @https_fn.on_request(cors=cors_options)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
