@@ -30,7 +30,6 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
             )
 
         gcs_uri = data.get("gcs_uri")
-        document_type = data.get("document_type")
 
         if not gcs_uri or not isinstance(gcs_uri, str):
             return https_fn.Response(
@@ -39,23 +38,8 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
-        if not document_type or not isinstance(document_type, str):
-            return https_fn.Response(
-                json.dumps({"error": "Missing or invalid document_type"}),
-                status=400,
-                content_type="application/json"
-            )
-
-        try:
-            from core.extractor import get_extractor
-            extractor = get_extractor(document_type)
-        except ValueError as e:
-            return https_fn.Response(
-                json.dumps({"error": str(e)}),
-                status=400,
-                content_type="application/json"
-            )
-
+        from core.extractor import DocumentExtractor
+        extractor = DocumentExtractor()
         extracted_data = extractor.extract(gcs_uri)
 
         return https_fn.Response(
