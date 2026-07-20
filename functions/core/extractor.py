@@ -3,10 +3,6 @@ import json
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
-from google.cloud import documentai
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
-
 
 class DocumentExtractor(ABC):
     """
@@ -44,8 +40,6 @@ class IdentityExtractor(DocumentExtractor):
                 "FIREBASE_PROJECT_ID and DOCUMENT_AI_PROCESSOR_ID environment variables must be set."
             )
 
-        self.client = documentai.DocumentProcessorServiceClient()
-
     def extract(self, gcs_uri: str) -> Dict[str, Any]:
         """
         Extracts data using Google Cloud Document AI.
@@ -56,7 +50,10 @@ class IdentityExtractor(DocumentExtractor):
         Returns:
             Dict[str, Any]: The extracted entities as a dictionary.
         """
-        name = self.client.processor_path(self.project_id, self.location, self.processor_id)
+        from google.cloud import documentai
+
+        client = documentai.DocumentProcessorServiceClient()
+        name = client.processor_path(self.project_id, self.location, self.processor_id)
 
         mime_type = "application/pdf"
         if gcs_uri.lower().endswith(".jpg") or gcs_uri.lower().endswith(".jpeg"):
@@ -74,7 +71,7 @@ class IdentityExtractor(DocumentExtractor):
             gcs_document=gcs_doc
         )
 
-        result = self.client.process_document(request=request)
+        result = client.process_document(request=request)
         document = result.document
 
         extracted_data = {}
@@ -98,9 +95,6 @@ class ComplexDocumentExtractor(DocumentExtractor):
         if not self.project_id:
             raise ValueError("FIREBASE_PROJECT_ID environment variable must be set.")
 
-        vertexai.init(project=self.project_id, location=self.location)
-        self.model = GenerativeModel("gemini-2.5-flash")
-
     def extract(self, gcs_uri: str) -> Dict[str, Any]:
         """
         Extracts data using Vertex AI Gemini model.
@@ -111,6 +105,12 @@ class ComplexDocumentExtractor(DocumentExtractor):
         Returns:
             Dict[str, Any]: The extracted structured data.
         """
+        import vertexai
+        from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
+
+        vertexai.init(project=self.project_id, location=self.location)
+        model = GenerativeModel("gemini-2.5-flash")
+
         mime_type = "application/pdf"
         if gcs_uri.lower().endswith(".jpg") or gcs_uri.lower().endswith(".jpeg"):
             mime_type = "image/jpeg"
@@ -127,7 +127,7 @@ class ComplexDocumentExtractor(DocumentExtractor):
             "Do not include markdown blocks or any other text outside the JSON."
         )
 
-        response = self.model.generate_content(
+        response = model.generate_content(
             [file_part, prompt],
             generation_config=GenerationConfig(
                 response_mime_type="application/json"
@@ -157,9 +157,6 @@ class DraftExtractor(DocumentExtractor):
         if not self.project_id:
             raise ValueError("FIREBASE_PROJECT_ID environment variable must be set.")
 
-        vertexai.init(project=self.project_id, location=self.location)
-        self.model = GenerativeModel("gemini-2.5-flash")
-
     def extract(self, gcs_uri: str) -> Dict[str, Any]:
         """
         Extracts raw text using Vertex AI Gemini model.
@@ -170,6 +167,12 @@ class DraftExtractor(DocumentExtractor):
         Returns:
             Dict[str, Any]: A dictionary containing the extracted raw text {"text": "..."}.
         """
+        import vertexai
+        from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
+
+        vertexai.init(project=self.project_id, location=self.location)
+        model = GenerativeModel("gemini-2.5-flash")
+
         mime_type = "application/pdf"
         if gcs_uri.lower().endswith(".jpg") or gcs_uri.lower().endswith(".jpeg"):
             mime_type = "image/jpeg"
@@ -186,7 +189,7 @@ class DraftExtractor(DocumentExtractor):
             "Do not include markdown blocks or any other text outside the JSON."
         )
 
-        response = self.model.generate_content(
+        response = model.generate_content(
             [file_part, prompt],
             generation_config=GenerationConfig(
                 response_mime_type="application/json"

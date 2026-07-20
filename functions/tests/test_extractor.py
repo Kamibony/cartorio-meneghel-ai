@@ -9,7 +9,7 @@ from core.extractor import IdentityExtractor, ComplexDocumentExtractor, get_extr
 class TestExtractor(unittest.TestCase):
 
     @patch.dict(os.environ, {"FIREBASE_PROJECT_ID": "test-project", "DOCUMENT_AI_PROCESSOR_ID": "test-processor"})
-    @patch('core.extractor.documentai.DocumentProcessorServiceClient')
+    @patch('google.cloud.documentai.DocumentProcessorServiceClient')
     def test_identity_extractor(self, mock_client_class):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
@@ -29,9 +29,9 @@ class TestExtractor(unittest.TestCase):
         self.assertTrue(mock_client.process_document.called)
 
     @patch.dict(os.environ, {"FIREBASE_PROJECT_ID": "test-project"})
-    @patch('core.extractor.vertexai.init')
-    @patch('core.extractor.GenerativeModel')
-    @patch('core.extractor.Part.from_uri')
+    @patch('vertexai.init')
+    @patch('vertexai.generative_models.GenerativeModel')
+    @patch('vertexai.generative_models.Part.from_uri')
     def test_complex_document_extractor(self, mock_part, mock_model_class, mock_init):
         mock_model = MagicMock()
         mock_model_class.return_value = mock_model
@@ -48,15 +48,12 @@ class TestExtractor(unittest.TestCase):
 
     def test_get_extractor(self):
         with patch.dict(os.environ, {"FIREBASE_PROJECT_ID": "test-project", "DOCUMENT_AI_PROCESSOR_ID": "test-processor"}):
-            with patch('core.extractor.documentai.DocumentProcessorServiceClient'):
-                extractor = get_extractor("CNH")
-                self.assertIsInstance(extractor, IdentityExtractor)
+            extractor = get_extractor("CNH")
+            self.assertIsInstance(extractor, IdentityExtractor)
 
         with patch.dict(os.environ, {"FIREBASE_PROJECT_ID": "test-project"}):
-            with patch('core.extractor.vertexai.init'):
-                with patch('core.extractor.GenerativeModel'):
-                    extractor = get_extractor("CERTIDAO")
-                    self.assertIsInstance(extractor, ComplexDocumentExtractor)
+            extractor = get_extractor("CERTIDAO")
+            self.assertIsInstance(extractor, ComplexDocumentExtractor)
 
         with self.assertRaises(ValueError):
             get_extractor("UNKNOWN")

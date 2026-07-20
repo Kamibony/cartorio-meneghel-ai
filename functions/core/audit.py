@@ -1,6 +1,5 @@
 import logging
 from typing import Dict, Any
-from firebase_admin import firestore
 import datetime
 
 logger = logging.getLogger(__name__)
@@ -13,6 +12,8 @@ class AuditLogger:
     def db(self):
         if self._db is None:
             try:
+                # Local import to prevent global initialization overhead
+                from firebase_admin import firestore
                 self._db = firestore.client()
             except Exception as e:
                 logger.error(f"Failed to initialize Firestore client for AuditLogger: {e}")
@@ -42,4 +43,10 @@ class AuditLogger:
 audit_logger = AuditLogger()
 
 def log_audit_event_async(event_data: Dict[str, Any]):
+    # Ensure Firebase is initialized before accessing Firestore
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+    except Exception as e:
+        logger.error(f"Failed to initialize Firebase admin in audit module: {e}")
     audit_logger.log_audit_event(event_data)

@@ -15,7 +15,7 @@ class TestAuditLogger(unittest.TestCase):
 
     def tearDown(self):
         self.app_context.pop()
-    @patch('core.audit.firestore.client')
+    @patch('firebase_admin.firestore.client')
     def test_log_audit_event(self, mock_firestore_client):
         # Setup mock db and collection
         mock_db = MagicMock()

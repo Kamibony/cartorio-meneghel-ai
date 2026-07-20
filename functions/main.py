@@ -1,8 +1,6 @@
 import json
 import os
 from firebase_functions import https_fn, options
-from firebase_admin import initialize_app, firestore
-import firebase_admin
 
 # Retrieve origins from env, defaulting to '*'
 origins_str = os.environ.get("CORS_ORIGINS", "*")
@@ -13,17 +11,8 @@ cors_options = options.CorsOptions(
     cors_methods=["GET", "POST", "OPTIONS"]
 )
 
-from core.validator import DocumentValidator
-from core.extractor import get_extractor
-from core.audit import log_audit_event_async
 
-if not firebase_admin._apps:
-    try:
-        initialize_app()
-    except ValueError:
-        pass
-
-@https_fn.on_request(cors=cors_options)
+@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_512)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data from a document stored in GCS.
@@ -63,6 +52,7 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
             )
 
         try:
+            from core.extractor import get_extractor
             extractor = get_extractor(document_type)
         except ValueError as e:
             return https_fn.Response(
@@ -92,7 +82,7 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_request(cors=cors_options)
+@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_256)
 def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
     """
     Accepts feedback on document validation and logs it asynchronously to Firestore.
@@ -143,6 +133,7 @@ def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
         }
 
         # Asynchronously log the event to Firestore
+        from core.audit import log_audit_event_async
         log_audit_event_async(event_data)
 
         # Return 200 OK immediately
@@ -158,7 +149,7 @@ def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_request(cors=cors_options)
+@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_256)
 def api_status(req: https_fn.Request) -> https_fn.Response:
     """Returns the API status."""
     return https_fn.Response(
@@ -166,7 +157,7 @@ def api_status(req: https_fn.Request) -> https_fn.Response:
         content_type="application/json"
     )
 
-@https_fn.on_request(cors=cors_options)
+@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_512)
 def validate_document_text(req: https_fn.Request) -> https_fn.Response:
     """
     Validates typed text against ground truth deterministically.
@@ -198,6 +189,7 @@ def validate_document_text(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
+        from core.validator import DocumentValidator
         validator = DocumentValidator(ground_truth, typed_text)
         errors = validator.validate()
 
@@ -212,7 +204,7 @@ def validate_document_text(req: https_fn.Request) -> https_fn.Response:
             status=500,
             content_type="application/json"
         )
-@https_fn.on_request(cors=cors_options)
+@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_256)
 def log_audit_event(req: https_fn.Request) -> https_fn.Response:
     """
     Logs an audit event, such as marking a document as unreadable.
@@ -251,6 +243,9 @@ def log_audit_event(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import firestore
         db = firestore.client()
 
         # Determine the project ID from env, or use the fallback
