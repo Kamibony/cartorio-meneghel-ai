@@ -86,7 +86,7 @@ jobs:
         run: |
           echo "$SA_KEY" > /tmp/firebase-key.json
           gcloud auth activate-service-account --key-file=/tmp/firebase-key.json
-          gsutil cors set cors.json gs://$FIREBASE_PROJECT_ID.appspot.com
+          gsutil cors set cors.json gs://$FIREBASE_PROJECT_ID.firebasestorage.app
 
       - name: Deploy to Firebase Functions
         env:
