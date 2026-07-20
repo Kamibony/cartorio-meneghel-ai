@@ -2,17 +2,12 @@ import json
 import os
 from firebase_functions import https_fn, options
 
-# Retrieve origins from env, defaulting to '*'
-origins_str = os.environ.get("CORS_ORIGINS", "*")
-origins = origins_str.split(",")
-
-cors_options = options.CorsOptions(
-    cors_origins=origins,
-    cors_methods=["GET", "POST", "OPTIONS"]
-)
+# Python's firebase_functions SDK does not support 'cors' in set_global_options.
+# Therefore, we define a global CORS configuration and apply it to all HTTP functions.
+global_cors = options.CorsOptions(cors_origins="*", cors_methods=["get", "post", "options"])
 
 
-@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_512)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data from a document stored in GCS.
@@ -82,7 +77,7 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_256)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
     """
     Accepts feedback on document validation and logs it asynchronously to Firestore.
@@ -149,7 +144,7 @@ def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_256)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def api_status(req: https_fn.Request) -> https_fn.Response:
     """Returns the API status."""
     return https_fn.Response(
@@ -157,7 +152,7 @@ def api_status(req: https_fn.Request) -> https_fn.Response:
         content_type="application/json"
     )
 
-@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_512)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
 def validate_document_text(req: https_fn.Request) -> https_fn.Response:
     """
     Validates typed text against ground truth deterministically.
@@ -204,7 +199,7 @@ def validate_document_text(req: https_fn.Request) -> https_fn.Response:
             status=500,
             content_type="application/json"
         )
-@https_fn.on_request(cors=cors_options, memory=options.MemoryOption.MB_256)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def log_audit_event(req: https_fn.Request) -> https_fn.Response:
     """
     Logs an audit event, such as marking a document as unreadable.
