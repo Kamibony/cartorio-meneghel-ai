@@ -56,6 +56,8 @@ class DocumentExtractor:
             prompt = (
                 "Analyze this document. Identify its type automatically and extract all relevant structured data. "
                 "Return the data strictly as a valid JSON object. "
+                "The output MUST be a strictly flat JSON object (no nested objects or dictionaries). "
+                "Translate all keys and values into Brazilian Portuguese (pt-BR). "
                 "Do not include markdown blocks or any other text outside the JSON."
             )
 
@@ -113,6 +115,8 @@ class DocumentExtractor:
         prompt = (
             "Analyze the following document text and extract all relevant structured data. "
             f"The output MUST be a valid JSON object containing EXACTLY these keys: {ground_truth_keys}. "
+            "The output MUST be a strictly flat JSON object (no nested objects or dictionaries). "
+            "Translate all values into Brazilian Portuguese (pt-BR). "
             "If a field is not found or cannot be determined, set its value to null. "
             "Do not include markdown blocks or any other text outside the JSON."
         )
