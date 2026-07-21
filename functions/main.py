@@ -1,6 +1,10 @@
 import json
 import os
+import logging
+import traceback
 from firebase_functions import https_fn, options
+
+logger = logging.getLogger(__name__)
 
 # Python's firebase_functions SDK does not support 'cors' in set_global_options.
 # Therefore, we define a global CORS configuration and apply it to all HTTP functions.
@@ -49,14 +53,22 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         )
     except ValueError as e:
         # Catch specific value errors raised during extraction (e.g., config missing)
+        logger.error("ValueError in extract_document_data", exc_info=True)
         return https_fn.Response(
-            json.dumps({"error": str(e)}),
+            json.dumps({
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }),
             status=400,
             content_type="application/json"
         )
     except Exception as e:
+        logger.error("Error in extract_document_data", exc_info=True)
         return https_fn.Response(
-            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            json.dumps({
+                "error": f"Internal server error: {str(e)}",
+                "traceback": traceback.format_exc()
+            }),
             status=500,
             content_type="application/json"
         )

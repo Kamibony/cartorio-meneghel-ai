@@ -1,6 +1,10 @@
 import os
 import json
+import logging
+import traceback
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 class DocumentExtractor:
     """
@@ -47,18 +51,20 @@ class DocumentExtractor:
             "Do not include markdown blocks or any other text outside the JSON."
         )
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[file_part, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
-
-        if not response.text:
-            raise ValueError("Empty response received from Vertex AI.")
-
         try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[file_part, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+
+            if not response.text:
+                raise ValueError("Empty response received from Vertex AI.")
+
             return json.loads(response.text)
-        except json.JSONDecodeError:
-            raise ValueError(f"Failed to parse JSON response from Vertex AI. Response was: {response.text}")
+        except Exception as e:
+            logger.error(f"Error extracting document data: {e}", exc_info=True)
+            tb_str = traceback.format_exc()
+            raise Exception(f"Extraction failed: {str(e)}\nTraceback: {tb_str}") from e
