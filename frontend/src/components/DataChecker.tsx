@@ -7,6 +7,8 @@ interface ValidationError {
   field: string;
   level: string;
   message: string;
+  expected?: string;
+  found?: string;
 }
 
 interface ValidationResponse {
@@ -88,6 +90,31 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
   const isButtonDisabled = isValidating || isUploading || isExtracting || !groundTruth || (inputType === 'upload' ? !draftFile : !typedText.trim());
   const isProcessing = isValidating || isUploading || isExtracting;
+
+  const currentDraftText = inputType === 'upload' ? (cachedDraftText?.text || '') : typedText;
+
+  const generateCorrectedDraft = () => {
+    if (!validationErrors || validationErrors.length === 0 || !currentDraftText) return currentDraftText;
+
+    let corrected = currentDraftText;
+    validationErrors.forEach((error) => {
+      if (error.found && error.expected && error.found.trim() !== '') {
+        // Basic string replacement for the first occurrence of 'found' string
+        // We use split and join in case there are multiple, but replace could also be fine.
+        corrected = corrected.split(error.found).join(error.expected);
+      }
+    });
+    return corrected;
+  };
+
+  const correctedText = generateCorrectedDraft();
+
+  const handleCopyCorrected = () => {
+    navigator.clipboard.writeText(correctedText).then(() => {
+      // Optional: show a small toast or indication
+      alert('Texto corrigido copiado para a área de transferência!');
+    });
+  };
 
   return (
     <div className="h-full bg-white border border-gray-300 rounded-lg shadow-sm flex flex-col">
@@ -191,7 +218,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           </button>
         </div>
 
-        <div className="mt-6 border-t border-gray-200 pt-4 overflow-y-auto" style={{ maxHeight: '250px' }}>
+        <div className="mt-6 border-t border-gray-200 pt-4 overflow-y-auto flex-1">
           <h3 className="text-sm font-medium text-gray-700 mb-3">Resultados da Validação</h3>
 
           {serverError && (
@@ -220,18 +247,73 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
             </div>
           ) : (
             validationErrors && validationErrors.length > 0 && (
-              <div className="space-y-3">
-                <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-2">
-                  <p className="text-sm text-red-700 font-bold">Ação Necessária: Divergências Encontradas</p>
-                </div>
-                {validationErrors.map((error, idx) => (
-                  <div key={idx} className="bg-orange-50 border border-orange-200 rounded-md p-3">
-                    <p className="text-sm font-semibold text-orange-800 uppercase tracking-wide mb-1">
-                      Campo: {error.field}
-                    </p>
-                    <p className="text-sm text-orange-700">{error.message}</p>
+              <div className="flex flex-col space-y-6">
+                <div>
+                  <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-4">
+                    <p className="text-sm text-red-700 font-bold">Ação Necessária: Divergências Encontradas</p>
                   </div>
-                ))}
+                  <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                    <table className="min-w-full divide-y divide-gray-300">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                            Campo
+                          </th>
+                          <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                            O que está na minuta
+                          </th>
+                          <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                            O que deveria ser
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {validationErrors.map((error, idx) => (
+                          <tr key={idx}>
+                            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6 uppercase">
+                              {error.field}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-4 text-sm">
+                              {error.found ? (
+                                <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
+                                  {error.found}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 italic">Não encontrado</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-4 text-sm">
+                               {error.expected ? (
+                                  <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                                    {error.expected}
+                                  </span>
+                               ) : (
+                                 <span className="text-gray-400 italic">-</span>
+                               )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">Minuta Corrigida</h3>
+                    <button
+                      onClick={handleCopyCorrected}
+                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      Copiar Texto Corrigido
+                    </button>
+                  </div>
+                  <textarea
+                    readOnly
+                    value={correctedText}
+                    className="w-full h-48 border border-gray-300 rounded-md shadow-sm p-3 bg-gray-50 focus:outline-none focus:ring-0 font-mono text-sm resize-none"
+                  />
+                </div>
               </div>
             )
           )}
