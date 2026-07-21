@@ -78,6 +78,24 @@ def normalize_string(text: str) -> str:
 
     return text
 
+
+CORE_IDENTITY_FIELDS = {
+    "nome",
+    "cpf",
+    "rg",
+    "data_nascimento",
+    "estado_civil",
+    "filiacao",
+    "nome_mae",
+    "nome_pai",
+    "naturalidade",
+    "nacionalidade",
+    "cidade_expedicao",
+    "estado_expedicao",
+    "cpf_requerente",
+    "nome_requerente"
+}
+
 class DocumentValidator:
     """
     Deterministically cross-checks structured ground truth data against a typed text string
@@ -125,15 +143,16 @@ class DocumentValidator:
             if expected_node is None or (isinstance(expected_node, str) and not expected_node.strip()):
                 return
 
-            if found_node is None:
-                self.errors.append({
-                    "field": path,
-                    "level": "critical",
-                    "message": f"O campo '{path}' não foi encontrado no texto."
-                })
-                return
-
             leaf_key = path.split('.')[-1]
+
+            if found_node is None:
+                if leaf_key in CORE_IDENTITY_FIELDS:
+                    self.errors.append({
+                        "field": path,
+                        "level": "critical",
+                        "message": f"O campo '{path}' não foi encontrado no texto."
+                    })
+                return
 
             if leaf_key in ["cpf", "rg"]:
                 norm_expected = normalize_digits(str(expected_node))

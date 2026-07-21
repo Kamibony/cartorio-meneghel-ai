@@ -298,5 +298,24 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 0)
 
+
+    def test_missing_non_essential_field_in_draft(self):
+        ground_truth = {
+            "cpf": "702.478.934-47",
+            "linha_mrz_1": "IDBRASCAMILA<<<<<<<<<<<<<<<"
+        }
+        typed_text = "O cpf 702.478.934-47."
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "cpf": "702.478.934-47",
+            # linha_mrz_1 omitted from draft json
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 0) # Should be gracefully ignored
+
 if __name__ == '__main__':
     unittest.main()
