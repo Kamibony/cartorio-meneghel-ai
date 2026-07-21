@@ -42,9 +42,11 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
+        document_type = data.get("document_type")
+
         from core.extractor import DocumentExtractor
         extractor = DocumentExtractor()
-        extracted_data = extractor.extract(gcs_uri)
+        extracted_data = extractor.extract(gcs_uri, document_type=document_type)
 
         return https_fn.Response(
             json.dumps({"status": "success", "data": extracted_data}),
