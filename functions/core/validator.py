@@ -21,67 +21,73 @@ def normalize_string(text: str) -> str:
 
 class DocumentValidator:
     """
-    Deterministically cross-checks structured ground truth data against a typed text string.
+    Deterministically cross-checks structured ground truth data against a typed text string
+    using a hybrid approach:
+      1. Extract structured data from `typed_text` via LLM into a JSON matching `ground_truth`.
+      2. Deterministically compare the extracted JSON to the `ground_truth` using pure Python.
     """
     def __init__(self, ground_truth: Dict[str, Any], typed_text: str):
         self.ground_truth = ground_truth
         self.typed_text = typed_text
         self.errors = []
+        self._extractor_instance = None
 
     def validate(self) -> List[Dict[str, str]]:
         self.errors = []
-        norm_typed_text = normalize_string(self.typed_text)
 
+        # 1. Extract draft data using LLM
+        from core.extractor import DocumentExtractor
+        if self._extractor_instance is None:
+            self._extractor_instance = DocumentExtractor()
+
+        keys_to_extract = list(self.ground_truth.keys())
+        draft_json = self._extractor_instance.extract_from_text(self.typed_text, keys_to_extract)
+
+        # 2. Deterministic validation
         for key, expected_val in self.ground_truth.items():
             if expected_val is None or (isinstance(expected_val, str) and not expected_val.strip()):
                 continue
 
+            found_val = draft_json.get(key)
+            if found_val is None:
+                self.errors.append({
+                    "field": key,
+                    "level": "critical",
+                    "message": f"O campo '{key}' não foi encontrado no texto."
+                })
+                continue
+
             if key == "cpf":
                 norm_expected_cpf = normalize_digits(str(expected_val))
-                # Find CPF-like patterns (e.g., 123.456.789-00 or 12345678900)
-                cpf_patterns = re.findall(r'\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2}\b', self.typed_text)
-                found_cpfs = [normalize_digits(p) for p in cpf_patterns]
+                norm_found_cpf = normalize_digits(str(found_val))
 
-                if norm_expected_cpf not in found_cpfs:
-                    found_str = ", ".join(found_cpfs) if found_cpfs else "nothing"
-                    if len(found_cpfs) == 1:
-                        msg = f"Expected {norm_expected_cpf} but found {found_cpfs[0]}"
-                    else:
-                        msg = f"Expected {norm_expected_cpf} but found {found_str}"
-
+                if norm_expected_cpf != norm_found_cpf:
                     self.errors.append({
                         "field": "cpf",
                         "level": "critical",
-                        "message": msg
+                        "message": f"O campo 'cpf' não confere. Esperado: {norm_expected_cpf}, Encontrado: {norm_found_cpf}"
                     })
 
             elif key == "rg":
                 norm_expected_rg = normalize_digits(str(expected_val))
-                # Find RG-like patterns: typical formats like 12.345.678-9 or just sequences of 5-14 digits
-                rg_patterns = re.findall(r'\b(?:[0-9]{1,3}\.?[0-9]{3}\.?[0-9]{3}-?[0-9X]|\d{5,14}X?)\b', self.typed_text, flags=re.IGNORECASE)
-                found_rgs = [normalize_digits(p) for p in rg_patterns]
+                norm_found_rg = normalize_digits(str(found_val))
 
-                if norm_expected_rg not in found_rgs:
-                    found_str = ", ".join(found_rgs) if found_rgs else "nothing"
-                    if len(found_rgs) == 1:
-                        msg = f"Expected {norm_expected_rg} but found {found_rgs[0]}"
-                    else:
-                        msg = f"Expected {norm_expected_rg} but found {found_str}"
-
+                if norm_expected_rg != norm_found_rg:
                     self.errors.append({
                         "field": "rg",
                         "level": "critical",
-                        "message": msg
+                        "message": f"O campo 'rg' não confere. Esperado: {norm_expected_rg}, Encontrado: {norm_found_rg}"
                     })
 
             else:
                 # General Check for all other fields
                 norm_expected_val = normalize_string(str(expected_val))
-                if norm_expected_val not in norm_typed_text:
+                norm_found_val = normalize_string(str(found_val))
+                if norm_expected_val != norm_found_val:
                     self.errors.append({
                         "field": key,
                         "level": "critical",
-                        "message": f"Expected '{norm_expected_val}' as substring but not found in text"
+                        "message": f"O campo '{key}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'"
                     })
 
         return self.errors
