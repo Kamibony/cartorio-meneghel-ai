@@ -20,12 +20,13 @@ class DocumentExtractor:
         if not self.project_id:
             raise ValueError("FIREBASE_PROJECT_ID environment variable must be set.")
 
-    def extract(self, gcs_uri: str) -> Dict[str, Any]:
+    def extract(self, gcs_uri: str, document_type: str = None) -> Dict[str, Any]:
         """
         Extracts data autonomously using Vertex AI Gemini model.
 
         Args:
             gcs_uri (str): The GCS URI of the document.
+            document_type (str, optional): The type of the document (e.g., "DRAFT").
 
         Returns:
             Dict[str, Any]: The extracted structured data.
@@ -45,11 +46,18 @@ class DocumentExtractor:
 
         file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
 
-        prompt = (
-            "Analyze this document. Identify its type automatically and extract all relevant structured data. "
-            "Return the data strictly as a valid JSON object. "
-            "Do not include markdown blocks or any other text outside the JSON."
-        )
+        if document_type == 'DRAFT':
+            prompt = (
+                "Extract the entire text verbatim from this document. "
+                "Return the data strictly as a valid JSON object with a single key 'text' containing the extracted text. "
+                "Do not include markdown blocks or any other text outside the JSON."
+            )
+        else:
+            prompt = (
+                "Analyze this document. Identify its type automatically and extract all relevant structured data. "
+                "Return the data strictly as a valid JSON object. "
+                "Do not include markdown blocks or any other text outside the JSON."
+            )
 
         try:
             response = client.models.generate_content(
@@ -63,7 +71,22 @@ class DocumentExtractor:
             if not response.text:
                 raise ValueError("Empty response received from Vertex AI.")
 
-            return json.loads(response.text)
+            raw_text = response.text.strip()
+
+            # Robust JSON parsing
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+
+            raw_text = raw_text.strip()
+
+            try:
+                return json.loads(raw_text)
+            except json.JSONDecodeError as je:
+                raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
         except Exception as e:
             logger.error(f"Error extracting document data: {e}", exc_info=True)
             tb_str = traceback.format_exc()
