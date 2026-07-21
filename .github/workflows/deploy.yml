@@ -59,13 +59,14 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
 
-      - name: Setup GCP Auth and CORS
+      - name: Setup GCP Auth, APIs and CORS
         env:
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
         run: |
           echo "$SA_KEY" > /tmp/firebase-key.json
           gcloud auth activate-service-account --key-file=/tmp/firebase-key.json
+          gcloud services enable aiplatform.googleapis.com --project "$FIREBASE_PROJECT_ID"
           gsutil cors set cors.json gs://$FIREBASE_PROJECT_ID.firebasestorage.app
 
       - name: Deploy to Firebase Functions
