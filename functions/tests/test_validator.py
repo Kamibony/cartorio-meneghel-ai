@@ -1,7 +1,24 @@
 import unittest
-from core.validator import DocumentValidator, normalize_digits, normalize_string
+from core.validator import DocumentValidator, normalize_digits, normalize_string, normalize_date, normalize_list_or_string
 
 class TestValidatorFunctions(unittest.TestCase):
+    def test_normalize_date(self):
+        self.assertEqual(normalize_date("26/08/2000"), "2000-08-26")
+        self.assertEqual(normalize_date("2000-08-26"), "2000-08-26")
+        self.assertEqual(normalize_date("2000/08/26"), "2000-08-26")
+        self.assertEqual(normalize_date("01-02-1990"), "1990-02-01")
+        self.assertEqual(normalize_date("some random text"), "some random text")
+        self.assertEqual(normalize_date(""), "")
+
+    def test_normalize_list_or_string(self):
+        # List input
+        self.assertEqual(normalize_list_or_string(["B", "A", "C "]), ["A", "B", "C"])
+
+        # String input with separators
+        self.assertEqual(normalize_list_or_string("João e Maria"), ["JOAO", "MARIA"])
+        self.assertEqual(normalize_list_or_string("João, Maria and José"), ["JOAO", "JOSE", "MARIA"])
+        self.assertEqual(normalize_list_or_string("João ou Maria"), ["JOAO", "MARIA"])
+
     def test_normalize_digits(self):
         self.assertEqual(normalize_digits("123.456.789-00"), "12345678900")
         self.assertEqual(normalize_digits("12.345.678-X"), "12345678X")
@@ -209,57 +226,77 @@ class TestDocumentValidator(unittest.TestCase):
         self.assertIn("data_nascimento", fields)
         self.assertIn("naturalidade", fields)
 
-    def test_nested_dict_handling(self):
+    def test_flat_dict_handling(self):
         ground_truth = {
-            "issuing_office_details": {
-                "city": "JOAO PESSOA",
-                "state": "PB"
-            },
-            "applicant": {
-                "nome": "MARIA DA SILVA",
-                "cpf": "123.456.789-00"
-            }
+            "cidade_expedicao": "JOAO PESSOA",
+            "estado_expedicao": "PB",
+            "nome_requerente": "MARIA DA SILVA",
+            "cpf_requerente": "123.456.789-00"
         }
         typed_text = "Em Joao Pessoa / PB, compareceu Maria da Silva com cpf 12345678900."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "issuing_office_details": {
-                "city": "JOAO PESSOA/PB", # To test city cleanup simultaneously
-                "state": "PARAIBA"        # To test state mapping simultaneously
-            },
-            "applicant": {
-                "nome": "MARIA DA SILVA(A)", # To test suffix stripping
-                "cpf": "123.456.789-00"
-            }
+            "cidade_expedicao": "JOAO PESSOA/PB", # To test city cleanup simultaneously
+            "estado_expedicao": "PARAIBA",        # To test state mapping simultaneously
+            "nome_requerente": "MARIA DA SILVA(A)", # To test suffix stripping
+            "cpf_requerente": "123.456.789-00"
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 0)
 
-    def test_nested_dict_missing_field(self):
+    def test_flat_dict_missing_field(self):
         ground_truth = {
-            "issuing_office_details": {
-                "city": "JOAO PESSOA",
-                "state": "PB"
-            }
+            "cidade_expedicao": "JOAO PESSOA",
+            "estado_expedicao": "PB"
         }
         typed_text = "Em Joao Pessoa."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "issuing_office_details": {
-                "city": "JOAO PESSOA"
-            }
+            "cidade_expedicao": "JOAO PESSOA"
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "issuing_office_details.state")
+        self.assertEqual(errors[0]["field"], "estado_expedicao")
+
+    def test_filiation_list_vs_string(self):
+        ground_truth = {
+            "filiacao": ["PATRICIA", "HERMANN"]
+        }
+        typed_text = "filho de HERMANN e PATRICIA"
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "filiacao": "HERMANN E PATRICIA"
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 0)
+
+    def test_date_formatting(self):
+        ground_truth = {
+            "data_nascimento": "2000-06-26"
+        }
+        typed_text = "nascido em 26/06/2000"
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "data_nascimento": "26/06/2000"
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 0)
 
 if __name__ == '__main__':
     unittest.main()

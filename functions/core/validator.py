@@ -18,6 +18,43 @@ STATE_MAPPING = {
     "SERGIPE": "SE", "TOCANTINS": "TO"
 }
 
+def normalize_date(text: str) -> str:
+    """Attempt to parse various date formats into YYYY-MM-DD."""
+    if not text:
+        return ""
+
+    text = str(text).strip()
+
+    # Check for DD/MM/YYYY or DD-MM-YYYY
+    match = re.match(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$', text)
+    if match:
+        day, month, year = match.groups()
+        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+
+    # Check for YYYY-MM-DD or YYYY/MM/DD
+    match = re.match(r'^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$', text)
+    if match:
+        year, month, day = match.groups()
+        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+
+    return text
+
+def normalize_list_or_string(item: Any) -> List[str]:
+    """Coerce lists and strings into a sorted list of normalized strings."""
+    if item is None:
+        return []
+
+    if isinstance(item, list):
+        items = [str(x) for x in item]
+    else:
+        text = str(item)
+        # Split by common separators: comma, ' e ', ' and ', ' ou '
+        items = re.split(r',|\s+e\s+|\s+and\s+|\s+ou\s+', text, flags=re.IGNORECASE)
+
+    normalized_items = [normalize_string(i.strip()) for i in items if i.strip()]
+    normalized_items.sort()
+    return normalized_items
+
 def normalize_string(text: str) -> str:
     """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
     if not isinstance(text, str):
@@ -98,26 +135,48 @@ class DocumentValidator:
 
             leaf_key = path.split('.')[-1]
 
-            if leaf_key == "cpf":
-                norm_expected_cpf = normalize_digits(str(expected_node))
-                norm_found_cpf = normalize_digits(str(found_node))
-
-                if norm_expected_cpf != norm_found_cpf:
+            if leaf_key in ["cpf", "rg"]:
+                norm_expected = normalize_digits(str(expected_node))
+                norm_found = normalize_digits(str(found_node))
+                if norm_expected != norm_found:
                     self.errors.append({
                         "field": path,
                         "level": "critical",
-                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected_cpf}, Encontrado: {norm_found_cpf}"
+                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}"
                     })
-            elif leaf_key == "rg":
-                norm_expected_rg = normalize_digits(str(expected_node))
-                norm_found_rg = normalize_digits(str(found_node))
-
-                if norm_expected_rg != norm_found_rg:
+            elif "data" in leaf_key.lower():
+                norm_expected = normalize_date(str(expected_node))
+                norm_found = normalize_date(str(found_node))
+                if norm_expected != norm_found:
                     self.errors.append({
                         "field": path,
                         "level": "critical",
-                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected_rg}, Encontrado: {norm_found_rg}"
+                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}"
                     })
+            elif isinstance(expected_node, list) or isinstance(found_node, list) or "filia" in leaf_key.lower() or "nome" in leaf_key.lower():
+                # For fields that might be lists (filiation, names sometimes extracted as lists of words)
+                norm_expected_list = normalize_list_or_string(expected_node)
+                norm_found_list = normalize_list_or_string(found_node)
+
+                # Further check if they are identical lists
+                if norm_expected_list != norm_found_list:
+                    # If dealing with lists of single elements, maybe try simple string check as fallback
+                    if len(norm_expected_list) == 1 and len(norm_found_list) == 1:
+                        if norm_expected_list[0] != norm_found_list[0]:
+                             self.errors.append({
+                                "field": path,
+                                "level": "critical",
+                                "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'"
+                            })
+                    else:
+                        expected_str = ", ".join(norm_expected_list)
+                        found_str = ", ".join(norm_found_list)
+                        if expected_str != found_str:
+                            self.errors.append({
+                                "field": path,
+                                "level": "critical",
+                                "message": f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]"
+                            })
             else:
                 # General Check for all other fields
                 norm_expected_val = normalize_string(str(expected_node))
