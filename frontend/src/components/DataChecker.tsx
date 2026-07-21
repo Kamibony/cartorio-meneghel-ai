@@ -93,15 +93,27 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
   const currentDraftText = inputType === 'upload' ? (cachedDraftText?.text || '') : typedText;
 
+  const escapeRegExp = (string: string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
   const generateCorrectedDraft = () => {
     if (!validationErrors || validationErrors.length === 0 || !currentDraftText) return currentDraftText;
 
     let corrected = currentDraftText;
     validationErrors.forEach((error) => {
       if (error.found && error.expected && error.found.trim() !== '') {
-        // Basic string replacement for the first occurrence of 'found' string
-        // We use split and join in case there are multiple, but replace could also be fine.
-        corrected = corrected.split(error.found).join(error.expected);
+        const escapedFound = escapeRegExp(error.found);
+        // Use word boundaries for strict matching to prevent substring collision bugs
+        const regex = new RegExp(`\\b${escapedFound}\\b`, 'g');
+
+        // If the regex matches, replace it. Otherwise fallback to simple replace to be safe
+        // if no word boundaries exist around the substring.
+        if (regex.test(corrected)) {
+          corrected = corrected.replace(regex, error.expected);
+        } else {
+           corrected = corrected.split(error.found).join(error.expected);
+        }
       }
     });
     return corrected;
@@ -270,10 +282,10 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {validationErrors.map((error, idx) => (
                           <tr key={idx}>
-                            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6 uppercase">
+                            <td className="whitespace-normal break-words py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6 uppercase">
                               {error.field}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-4 text-sm">
+                            <td className="whitespace-normal break-words px-3 py-4 text-sm">
                               {error.found ? (
                                 <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
                                   {error.found}
@@ -282,7 +294,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                                 <span className="text-gray-400 italic">Não encontrado</span>
                               )}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-4 text-sm">
+                            <td className="whitespace-normal break-words px-3 py-4 text-sm">
                                {error.expected ? (
                                   <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
                                     {error.expected}

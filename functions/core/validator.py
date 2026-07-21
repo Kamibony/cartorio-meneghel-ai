@@ -86,6 +86,8 @@ CORE_IDENTITY_FIELDS = {
     "data_nascimento",
     "estado_civil",
     "filiacao",
+    "filiacao_mae",
+    "filiacao_pai",
     "nome_mae",
     "nome_pai",
     "naturalidade",
@@ -93,7 +95,17 @@ CORE_IDENTITY_FIELDS = {
     "cidade_expedicao",
     "estado_expedicao",
     "cpf_requerente",
-    "nome_requerente"
+    "nome_requerente",
+    "conjuge",
+    "nome_conjuge"
+}
+
+# Keys to strictly exclude (notary metadata, fees, footers)
+NOTARY_METADATA_KEYS = {
+    "emolumentos", "emolumento", "selo_digital", "selo", "cartorio_endereco",
+    "nome_escrevente", "escrevente", "data_emissao", "cartorio", "endereco",
+    "livro", "folha", "termo", "matricula", "averbacao", "anotacao",
+    "observacao", "observacoes", "rodape", "assinatura"
 }
 
 class DocumentValidator:
@@ -104,7 +116,14 @@ class DocumentValidator:
       2. Deterministically compare the extracted JSON to the `ground_truth` using pure Python.
     """
     def __init__(self, ground_truth: Dict[str, Any], typed_text: str):
-        self.ground_truth = ground_truth
+        # Pre-filter ground truth to remove notary metadata and keep only identity data
+        filtered_ground_truth = {}
+        for key, value in ground_truth.items():
+            key_lower = key.lower()
+            if not any(meta_key in key_lower for meta_key in NOTARY_METADATA_KEYS):
+                filtered_ground_truth[key] = value
+
+        self.ground_truth = filtered_ground_truth
         self.typed_text = typed_text
         self.errors = []
         self._extractor_instance = None
