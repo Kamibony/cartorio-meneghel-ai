@@ -91,3 +91,61 @@ class DocumentExtractor:
             logger.error(f"Error extracting document data: {e}", exc_info=True)
             tb_str = traceback.format_exc()
             raise Exception(f"Extraction failed: {str(e)}\nTraceback: {tb_str}") from e
+
+    def extract_from_text(self, text: str, ground_truth_keys: list) -> Dict[str, Any]:
+        """
+        Extracts structured data from raw text using Gemini 2.5 Flash, returning
+        a JSON object strictly matching the provided ground truth keys.
+        Uses temperature=0.0 to reduce hallucinations.
+
+        Args:
+            text (str): The raw draft text to analyze.
+            ground_truth_keys (list): List of expected keys in the output JSON.
+
+        Returns:
+            Dict[str, Any]: The extracted structured data.
+        """
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
+
+        prompt = (
+            "Analyze the following document text and extract all relevant structured data. "
+            f"The output MUST be a valid JSON object containing EXACTLY these keys: {ground_truth_keys}. "
+            "If a field is not found or cannot be determined, set its value to null. "
+            "Do not include markdown blocks or any other text outside the JSON."
+        )
+
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[prompt, text],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
+                )
+            )
+
+            if not response.text:
+                raise ValueError("Empty response received from Vertex AI.")
+
+            raw_text = response.text.strip()
+
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+
+            raw_text = raw_text.strip()
+
+            try:
+                return json.loads(raw_text)
+            except json.JSONDecodeError as je:
+                raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
+        except Exception as e:
+            logger.error(f"Error extracting from text: {e}", exc_info=True)
+            tb_str = traceback.format_exc()
+            raise Exception(f"Extraction from text failed: {str(e)}\nTraceback: {tb_str}") from e
