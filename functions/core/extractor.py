@@ -55,6 +55,8 @@ class DocumentExtractor:
         else:
             prompt = (
                 "Analyze this document. Identify its type automatically and extract all relevant structured data. "
+                "Focus ONLY on core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, spouse details). "
+                "STRICTLY EXCLUDE all notary metadata, fees, and footers (e.g., emolumentos, selo_digital, cartorio_endereco, nome_escrevente, data_emissao). "
                 "Return the data strictly as a valid JSON object. "
                 "The output MUST be a strictly flat JSON object (no nested objects or dictionaries). "
                 "Translate all keys and values into Brazilian Portuguese (pt-BR). "
