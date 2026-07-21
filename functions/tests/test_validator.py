@@ -77,5 +77,26 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 0)
 
+    def test_multiple_new_fields(self):
+        ground_truth = {
+            "cpf": "702.478.934-47",
+            "rg": "4054425",
+            "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+            "nome": "JOAO DA SILVA",
+            "data_nascimento": "01/01/1990",
+            "naturalidade": "SAO PAULO"
+        }
+        typed_text = "O cpf 702.473.934-45 e o rg 4054426 de Joaquim, nascido em 02/02/1990 em Rio de Janeiro, filho de MARIA."
+        validator = DocumentValidator(ground_truth, typed_text)
+        errors = validator.validate()
+        self.assertEqual(len(errors), 6)
+        fields = [e["field"] for e in errors]
+        self.assertIn("cpf", fields)
+        self.assertIn("rg", fields)
+        self.assertIn("nome_mae", fields)
+        self.assertIn("nome", fields)
+        self.assertIn("data_nascimento", fields)
+        self.assertIn("naturalidade", fields)
+
 if __name__ == '__main__':
     unittest.main()
