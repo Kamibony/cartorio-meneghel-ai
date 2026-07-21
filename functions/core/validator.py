@@ -8,15 +8,37 @@ def normalize_digits(text: str) -> str:
         text = str(text)
     return re.sub(r'[^0-9X]', '', text.upper())
 
+STATE_MAPPING = {
+    "ACRE": "AC", "ALAGOAS": "AL", "AMAPA": "AP", "AMAZONAS": "AM", "BAHIA": "BA",
+    "CEARA": "CE", "DISTRITO FEDERAL": "DF", "ESPIRITO SANTO": "ES", "GOIAS": "GO",
+    "MARANHAO": "MA", "MATO GROSSO": "MT", "MATO GROSSO DO SUL": "MS", "MINAS GERAIS": "MG",
+    "PARA": "PA", "PARAIBA": "PB", "PARANA": "PR", "PERNAMBUCO": "PE", "PIAUI": "PI",
+    "RIO DE JANEIRO": "RJ", "RIO GRANDE DO NORTE": "RN", "RIO GRANDE DO SUL": "RS",
+    "RONDONIA": "RO", "RORAIMA": "RR", "SANTA CATARINA": "SC", "SAO PAULO": "SP",
+    "SERGIPE": "SE", "TOCANTINS": "TO"
+}
+
 def normalize_string(text: str) -> str:
-    """Uppercase, remove extra spaces, and strip accents."""
+    """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
     if not isinstance(text, str):
         text = str(text)
     text = text.upper()
+
+    # Strip gender suffixes like (A) or (O/A)
+    text = re.sub(r'\([AO](/[AO])?\)', '', text)
+
+    # Strip trailing state slashes (e.g., JOAO PESSOA/PB -> JOAO PESSOA)
+    text = re.sub(r'/[A-Z]{2}$', '', text)
+
     # Strip accents
     text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     # Remove extra spaces
     text = re.sub(r'\s+', ' ', text).strip()
+
+    # Map full state names to acronyms
+    if text in STATE_MAPPING:
+        text = STATE_MAPPING[text]
+
     return text
 
 class DocumentValidator:
@@ -44,50 +66,65 @@ class DocumentValidator:
         draft_json = self._extractor_instance.extract_from_text(self.typed_text, keys_to_extract)
 
         # 2. Deterministic validation
-        for key, expected_val in self.ground_truth.items():
-            if expected_val is None or (isinstance(expected_val, str) and not expected_val.strip()):
-                continue
+        self._validate_node("", self.ground_truth, draft_json)
 
-            found_val = draft_json.get(key)
-            if found_val is None:
+        return self.errors
+
+    def _validate_node(self, path: str, expected_node: Any, found_node: Any) -> None:
+        if isinstance(expected_node, dict):
+            if not isinstance(found_node, dict):
                 self.errors.append({
-                    "field": key,
+                    "field": path if path else "root",
                     "level": "critical",
-                    "message": f"O campo '{key}' não foi encontrado no texto."
+                    "message": f"O campo '{path}' deveria ser um objeto (dicionário), mas não é."
                 })
-                continue
+                return
+            for key, expected_val in expected_node.items():
+                current_path = f"{path}.{key}" if path else key
+                found_val = found_node.get(key)
+                self._validate_node(current_path, expected_val, found_val)
+        else:
+            # Leaf node processing
+            if expected_node is None or (isinstance(expected_node, str) and not expected_node.strip()):
+                return
 
-            if key == "cpf":
-                norm_expected_cpf = normalize_digits(str(expected_val))
-                norm_found_cpf = normalize_digits(str(found_val))
+            if found_node is None:
+                self.errors.append({
+                    "field": path,
+                    "level": "critical",
+                    "message": f"O campo '{path}' não foi encontrado no texto."
+                })
+                return
+
+            leaf_key = path.split('.')[-1]
+
+            if leaf_key == "cpf":
+                norm_expected_cpf = normalize_digits(str(expected_node))
+                norm_found_cpf = normalize_digits(str(found_node))
 
                 if norm_expected_cpf != norm_found_cpf:
                     self.errors.append({
-                        "field": "cpf",
+                        "field": path,
                         "level": "critical",
-                        "message": f"O campo 'cpf' não confere. Esperado: {norm_expected_cpf}, Encontrado: {norm_found_cpf}"
+                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected_cpf}, Encontrado: {norm_found_cpf}"
                     })
-
-            elif key == "rg":
-                norm_expected_rg = normalize_digits(str(expected_val))
-                norm_found_rg = normalize_digits(str(found_val))
+            elif leaf_key == "rg":
+                norm_expected_rg = normalize_digits(str(expected_node))
+                norm_found_rg = normalize_digits(str(found_node))
 
                 if norm_expected_rg != norm_found_rg:
                     self.errors.append({
-                        "field": "rg",
+                        "field": path,
                         "level": "critical",
-                        "message": f"O campo 'rg' não confere. Esperado: {norm_expected_rg}, Encontrado: {norm_found_rg}"
+                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected_rg}, Encontrado: {norm_found_rg}"
                     })
-
             else:
                 # General Check for all other fields
-                norm_expected_val = normalize_string(str(expected_val))
-                norm_found_val = normalize_string(str(found_val))
+                norm_expected_val = normalize_string(str(expected_node))
+                norm_found_val = normalize_string(str(found_node))
                 if norm_expected_val != norm_found_val:
                     self.errors.append({
-                        "field": key,
+                        "field": path,
                         "level": "critical",
-                        "message": f"O campo '{key}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'"
+                        "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'"
                     })
-
-        return self.errors
