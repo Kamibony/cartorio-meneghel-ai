@@ -13,6 +13,24 @@ class TestValidatorFunctions(unittest.TestCase):
         self.assertEqual(normalize_string("Cássio"), "CASSIO")
         self.assertEqual(normalize_string("CÂMARA"), "CAMARA")
 
+    def test_state_mapping(self):
+        self.assertEqual(normalize_string("PARAIBA"), "PB")
+        self.assertEqual(normalize_string("SAO PAULO"), "SP")
+        self.assertEqual(normalize_string("RIO DE JANEIRO"), "RJ")
+        # Ensure it doesn't change if it's already acronym
+        self.assertEqual(normalize_string("PB"), "PB")
+
+    def test_suffix_stripping(self):
+        self.assertEqual(normalize_string("BRASILEIRO(A)"), "BRASILEIRO")
+        self.assertEqual(normalize_string("SOLTEIRO(O/A)"), "SOLTEIRO")
+        self.assertEqual(normalize_string("DIVORCIADO(A)"), "DIVORCIADO")
+
+    def test_city_cleanup(self):
+        self.assertEqual(normalize_string("JOAO PESSOA/PB"), "JOAO PESSOA")
+        self.assertEqual(normalize_string("RECIFE/PE"), "RECIFE")
+        # Ensure it handles normal text well
+        self.assertEqual(normalize_string("CURITIBA"), "CURITIBA")
+
 from unittest.mock import MagicMock
 
 class TestDocumentValidator(unittest.TestCase):
@@ -190,6 +208,58 @@ class TestDocumentValidator(unittest.TestCase):
         self.assertIn("nome", fields)
         self.assertIn("data_nascimento", fields)
         self.assertIn("naturalidade", fields)
+
+    def test_nested_dict_handling(self):
+        ground_truth = {
+            "issuing_office_details": {
+                "city": "JOAO PESSOA",
+                "state": "PB"
+            },
+            "applicant": {
+                "nome": "MARIA DA SILVA",
+                "cpf": "123.456.789-00"
+            }
+        }
+        typed_text = "Em Joao Pessoa / PB, compareceu Maria da Silva com cpf 12345678900."
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "issuing_office_details": {
+                "city": "JOAO PESSOA/PB", # To test city cleanup simultaneously
+                "state": "PARAIBA"        # To test state mapping simultaneously
+            },
+            "applicant": {
+                "nome": "MARIA DA SILVA(A)", # To test suffix stripping
+                "cpf": "123.456.789-00"
+            }
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 0)
+
+    def test_nested_dict_missing_field(self):
+        ground_truth = {
+            "issuing_office_details": {
+                "city": "JOAO PESSOA",
+                "state": "PB"
+            }
+        }
+        typed_text = "Em Joao Pessoa."
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "issuing_office_details": {
+                "city": "JOAO PESSOA"
+            }
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["field"], "issuing_office_details.state")
 
 if __name__ == '__main__':
     unittest.main()
