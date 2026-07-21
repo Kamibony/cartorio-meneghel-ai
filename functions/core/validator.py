@@ -126,12 +126,24 @@ class DocumentValidator:
         return self.errors
 
     def _validate_node(self, path: str, expected_node: Any, found_node: Any) -> None:
+        def format_val(val: Any) -> str:
+            if val is None:
+                return ""
+            if isinstance(val, list):
+                return ", ".join([str(v) for v in val])
+            return str(val)
+
+        expected_str_raw = format_val(expected_node)
+        found_str_raw = format_val(found_node)
+
         if isinstance(expected_node, dict):
             if not isinstance(found_node, dict):
                 self.errors.append({
                     "field": path if path else "root",
                     "level": "critical",
-                    "message": f"O campo '{path}' deveria ser um objeto (dicionário), mas não é."
+                    "message": f"O campo '{path}' deveria ser um objeto (dicionário), mas não é.",
+                    "expected": expected_str_raw,
+                    "found": found_str_raw
                 })
                 return
             for key, expected_val in expected_node.items():
@@ -150,7 +162,9 @@ class DocumentValidator:
                     self.errors.append({
                         "field": path,
                         "level": "critical",
-                        "message": f"O campo '{path}' não foi encontrado no texto."
+                        "message": f"O campo '{path}' não foi encontrado no texto.",
+                        "expected": expected_str_raw,
+                        "found": ""
                     })
                 return
 
@@ -161,7 +175,9 @@ class DocumentValidator:
                     self.errors.append({
                         "field": path,
                         "level": "critical",
-                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}"
+                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
+                        "expected": expected_str_raw,
+                        "found": found_str_raw
                     })
             elif "data" in leaf_key.lower():
                 norm_expected = normalize_date(str(expected_node))
@@ -170,7 +186,9 @@ class DocumentValidator:
                     self.errors.append({
                         "field": path,
                         "level": "critical",
-                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}"
+                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
+                        "expected": expected_str_raw,
+                        "found": found_str_raw
                     })
             elif isinstance(expected_node, list) or isinstance(found_node, list) or "filia" in leaf_key.lower() or "nome" in leaf_key.lower():
                 # For fields that might be lists (filiation, names sometimes extracted as lists of words)
@@ -185,7 +203,9 @@ class DocumentValidator:
                              self.errors.append({
                                 "field": path,
                                 "level": "critical",
-                                "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'"
+                                "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'",
+                                "expected": expected_str_raw,
+                                "found": found_str_raw
                             })
                     else:
                         expected_str = ", ".join(norm_expected_list)
@@ -194,7 +214,9 @@ class DocumentValidator:
                             self.errors.append({
                                 "field": path,
                                 "level": "critical",
-                                "message": f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]"
+                                "message": f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]",
+                                "expected": expected_str_raw,
+                                "found": found_str_raw
                             })
             else:
                 # General Check for all other fields
@@ -204,5 +226,7 @@ class DocumentValidator:
                     self.errors.append({
                         "field": path,
                         "level": "critical",
-                        "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'"
+                        "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'",
+                        "expected": expected_str_raw,
+                        "found": found_str_raw
                     })
