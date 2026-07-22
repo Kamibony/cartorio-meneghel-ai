@@ -28,6 +28,10 @@
         "function": "log_audit_event"
       },
       {
+        "source": "/api/correct_document_text",
+        "function": "correct_document_text"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
