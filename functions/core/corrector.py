@@ -57,29 +57,23 @@ class DocumentCorrector:
             directives_text += f"  Found in Draft: {found}\n"
             directives_text += f"  Details: {message}\n"
 
-        prompt = f"""You are a precise legal document editor. Apply the provided Correction Directives to the draft text.
-Locate the relevant entity context and update their specific field to match the 'Expected Truth'.
-If the text has a typo, fix it. If the field is missing, insert it naturally.
+        prompt = f"""You are a precise text locator for legal documents. Your task is to find the exact substrings in the Draft Text that correspond to the "Found in Draft" values from the Correction Directives.
 
-CRITICAL INSTRUCTIONS:
-1. STRICT SWAP AND REPLACE: You must completely remove the string found in "Found in Draft" and replace it entirely with "Expected Truth".
-2. DO NOT BLEND OR CONCATENATE: Never append the new data to the old data. Never leave parts of the old data behind.
-3. Do not alter any other words, formatting, or paragraphs outside of the necessary corrections.
-4. Maintain the original document's language (Portuguese) and tone.
-5. Return ONLY the fully corrected text. Do not include markdown blocks, explanations, or any other wrapper text.
+For each Correction Directive:
+1. Locate the exact literal matching string in the Draft Text.
+2. The match must be exact, character-for-character, including any surrounding context if necessary to be unique, but ideally just the target phrase.
+3. Map this exact found text to its corresponding "Expected Truth".
 
-ANTI-PATTERNS (DO NOT DO THIS):
-- Bad Example 1 (Blending Date): changing "08" to "06" in "26/08/2000" and returning "26/086/2000".
-- Good Example 1 (Strict Swap): returning "26/06/2000".
-- Bad Example 2 (Appending Name): returning "Ideval Suzarte Lago e João Fàbio Dantas PereiraCAMILA FIGUEIREDO ROCHA e JOAO FABIO DANTAS PEREIRA".
-- Good Example 2 (Strict Swap): returning "CAMILA FIGUEIREDO ROCHA e JOAO FABIO DANTAS PEREIRA".
-- Bad Example 3 (Blending CPF): replacing "702.473.934-45" with "123.456.789-00" and returning "702.4738.934.45-47".
-- Good Example 3 (Strict Swap): returning "123.456.789-00".
+Return ONLY a JSON array of objects. Each object must have exactly two keys:
+- "exact_text_to_replace": The literal substring found in the Draft Text.
+- "new_value": The "Expected Truth" value that should replace it.
+
+If a directive asks to fix something but you absolutely cannot find the text, simply omit that directive from the JSON array. Do not invent text.
 
 Correction Directives:
 {directives_text}
 
-Draft Text to Correct:
+Draft Text:
 {draft_text}"""
 
         @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
@@ -89,7 +83,8 @@ Draft Text to Correct:
                     model="gemini-2.5-flash",
                     contents=[prompt],
                     config=types.GenerateContentConfig(
-                        temperature=0.0
+                        temperature=0.0,
+                        response_mime_type="application/json"
                     )
                 )
 
@@ -99,17 +94,43 @@ Draft Text to Correct:
             if not response.text:
                 raise ValueError("Empty response received from Vertex AI.")
 
-            corrected_text = response.text.strip()
+            raw_text = response.text.strip()
 
-            # Remove markdown code block if present
-            if corrected_text.startswith("```text"):
-                corrected_text = corrected_text[7:]
-            elif corrected_text.startswith("```"):
-                corrected_text = corrected_text[3:]
-            if corrected_text.endswith("```"):
-                corrected_text = corrected_text[:-3]
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
 
-            return corrected_text.strip()
+            raw_text = raw_text.strip()
+
+            try:
+                replacements = json.loads(raw_text)
+            except json.JSONDecodeError as je:
+                raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
+
+            if not isinstance(replacements, list):
+                raise ValueError("AI response is not a JSON array.")
+
+            corrected_text = draft_text
+            for rep in replacements:
+                exact_text = rep.get("exact_text_to_replace")
+                new_value = rep.get("new_value")
+
+                if not exact_text or new_value is None:
+                    continue
+
+                if exact_text in corrected_text:
+                    # Using replace with count=1 to be safe, or just let it replace all occurrences if identical
+                    # Replacing 1 occurrence is usually safer for names/dates to avoid collateral if it's duplicated,
+                    # but if there are multiple occurrences of the EXACT same error, we might want to replace all.
+                    # Let's replace all occurrences of this exact text.
+                    corrected_text = corrected_text.replace(exact_text, new_value)
+                else:
+                    logger.warning(f"Could not find exact text '{exact_text}' in draft text. Skipping replacement.")
+
+            return corrected_text
 
         except Exception as e:
             logger.error(f"Error semantically correcting text: {e}", exc_info=True)
