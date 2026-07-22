@@ -10,12 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "diff-match-patch": "^1.0.5",
     "firebase": "^12.16.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-zoom-pan-pinch": "^4.0.3"
   },
   "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
