@@ -43,10 +43,18 @@ export function useDocumentUpload() {
         }),
       });
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Erro no servidor: Resposta não está em formato JSON. Por favor, tente novamente.');
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to extract data');
+        if (response.status === 429) {
+            throw new Error('Serviço temporariamente indisponível devido ao alto volume (Rate Limit). Por favor, tente novamente em alguns segundos.');
+        }
+        throw new Error(data.error || 'Falha ao extrair dados');
       }
 
       extractedData = data.data;

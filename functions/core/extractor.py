@@ -2,9 +2,13 @@ import os
 import json
 import logging
 import traceback
+import threading
 from typing import Dict, Any
+from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
 
 logger = logging.getLogger(__name__)
+
+_semaphore = threading.Semaphore(3)
 
 class DocumentExtractor:
     """
@@ -64,14 +68,19 @@ class DocumentExtractor:
                 "Do not include markdown blocks or any other text outside the JSON."
             )
 
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[file_part, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
+        @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
+        def _generate():
+            with _semaphore:
+                return client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[file_part, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
                 )
-            )
+
+        try:
+            response = _generate()
 
             if not response.text:
                 raise ValueError("Empty response received from Vertex AI.")
@@ -127,15 +136,20 @@ class DocumentExtractor:
             "Do not include markdown blocks or any other text outside the JSON."
         )
 
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[prompt, text],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
+        @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
+        def _generate():
+            with _semaphore:
+                return client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt, text],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0
+                    )
                 )
-            )
+
+        try:
+            response = _generate()
 
             if not response.text:
                 raise ValueError("Empty response received from Vertex AI.")

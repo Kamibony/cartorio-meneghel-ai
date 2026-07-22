@@ -39,15 +39,23 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     };
   }, []);
 
-  const updateUnifiedGroundTruth = (currentFiles: UploadedFile[]) => {
+  useEffect(() => {
+    const hasErrors = files.some(f => f.status === 'error');
+    if (hasErrors) {
+      onDataExtracted(null);
+      setGlobalError("Atenção: A extração falhou para um ou mais documentos. Por favor, resolva os erros antes de prosseguir com a validação.");
+      return;
+    }
+    setGlobalError(null);
+
     let unifiedData = {};
-    currentFiles.forEach(f => {
+    files.forEach(f => {
       if (f.status === 'completed' && f.data) {
         unifiedData = { ...unifiedData, ...f.data };
       }
     });
     onDataExtracted(Object.keys(unifiedData).length > 0 ? unifiedData : null);
-  };
+  }, [files]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -93,7 +101,6 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
   const removeFile = (id: string) => {
     setFiles(prev => {
       const newFiles = prev.filter(f => f.id !== id);
-      updateUnifiedGroundTruth(newFiles);
 
       // If the removed file was selected, select another one or null
       if (selectedFileId === id) {
@@ -134,14 +141,16 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
         const newFiles = prev.map(f =>
           f.id === id ? { ...f, status: 'completed' as const, data: extractedData } : f
         );
-        updateUnifiedGroundTruth(newFiles);
         return newFiles;
       });
 
     } catch (err: any) {
-      setFiles(prev => prev.map(f =>
-        f.id === id ? { ...f, status: 'error' as const, error: err.message || 'Erro desconhecido' } : f
-      ));
+      setFiles(prev => {
+        const newFiles = prev.map(f =>
+          f.id === id ? { ...f, status: 'error' as const, error: err.message || 'Erro desconhecido' } : f
+        );
+        return newFiles;
+      });
     }
   };
 
