@@ -317,5 +317,85 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 0) # Should be gracefully ignored
 
+class TestDiverseNotarialActs(unittest.TestCase):
+    def test_escritura_compra_venda(self):
+        ground_truth = {
+            "nome_vendedor_1": {"nome": "JOAO VENDEDOR", "cpf": "111.111.111-11", "rg": "1111111"},
+            "nome_vendedor_2": {"nome": "MARIA VENDEDORA", "cpf": "222.222.222-22", "rg": "2222222"},
+            "nome_comprador_1": {"nome": "PEDRO COMPRADOR", "cpf": "333.333.333-33", "rg": "3333333"},
+            "nome_comprador_2": {"nome": "ANA COMPRADORA", "cpf": "444.444.444-44", "rg": "4444444"},
+            "non_essential_field_1": "ALGUM VALOR",
+            "emolumentos_valor": "R$ 100,00",
+            "selo_digital": "ABC12345",
+            "cartorio_endereco": "RUA PRINCIPAL, 123"
+        }
+        typed_text = "Escritura de Compra e Venda..."
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "nome_vendedor_1": {"nome": "JOAO VENDEDOR", "cpf": "111.111.111-11", "rg": "1111111"},
+            "nome_vendedor_2": {"nome": "MARIA VENDEDORA", "cpf": "222.222.222-22", "rg": "2222220"},
+            "nome_comprador_1": {"nome": "PEDRO COMPRADOR", "cpf": "333.333.333-33", "rg": "3333333"},
+            "nome_comprador_2": {"nome": "ANA COMPRADORA", "cpf": "444.444.444-44", "rg": "4444444"},
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["field"], "nome_vendedor_2.rg")
+        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn("2222222", errors[0]["message"])
+        self.assertIn("2222220", errors[0]["message"])
+
+    def test_inventario_e_partilha(self):
+        ground_truth = {
+            "de_cujus": {"nome": "FALECIDO DA SILVA", "cpf": "555.555.555-55", "data_nascimento": "1940-05-10"},
+            "herdeiro": {"nome": "HERDEIRO DA SILVA", "cpf": "666.666.666-66", "data_nascimento": "1970-01-01"},
+            "non_essential_field_2": "ALGUMA INFO",
+            "emolumentos_valor": "R$ 500,00"
+        }
+        typed_text = "Inventário e Partilha..."
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "de_cujus": {"nome": "FALECIDO DA SILVA", "cpf": "555.555.555-55", "data_nascimento": "10/05/1940"},
+            "herdeiro": {"nome": "HERDEIRA DA SILVA", "cpf": "666.666.666-66", "data_nascimento": "1970-01-01"}
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["field"], "herdeiro.nome")
+        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn("HERDEIRO DA SILVA", errors[0]["message"])
+        self.assertIn("HERDEIRA DA SILVA", errors[0]["message"])
+
+    def test_procuracao_publica(self):
+        ground_truth = {
+            "nome_requerente": "OUTORGANTE DA SILVA",
+            "cpf_requerente": "777.777.777-77",
+            "estado_civil": "CASADO",
+            "selo_digital": "XYZ987",
+            "cartorio_endereco": "AVENIDA CENTRAL"
+        }
+        typed_text = "Procuração Pública..."
+        validator = DocumentValidator(ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "nome_requerente": "OUTORGANTE DA SILVA",
+            "cpf_requerente": "777.777.777-78",
+            "estado_civil": "SOLTEIRO",
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 2)
+        fields = [e["field"] for e in errors]
+        self.assertIn("cpf_requerente", fields)
+        self.assertIn("estado_civil", fields)
+
 if __name__ == '__main__':
     unittest.main()
