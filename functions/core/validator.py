@@ -200,12 +200,6 @@ class DocumentValidator:
                             matched_draft_index = j
                             break
 
-                # If we STILL haven't matched it but it's a test case testing field mismatch,
-                # we should probably fall back to index matching if the arrays are the same size
-                if not matched_draft_entity and i < len(draft_entities) and i not in used_draft_indices:
-                    matched_draft_entity = draft_entities[i]
-                    matched_draft_index = i
-
                 if matched_draft_entity:
                     used_draft_indices.add(matched_draft_index)
                     self._validate_node(f"entities[{i}]", gt_entity, matched_draft_entity)

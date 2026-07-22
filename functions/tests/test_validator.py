@@ -259,7 +259,7 @@ class TestDocumentValidator(unittest.TestCase):
         mock_extractor.extract_from_text.return_value = {
             "entities": [
                 {
-                    "cpf": "702.473.934-45",
+                    "cpf": "702.478.934-47",  # MUST MATCH CPF TO BE IDENTIFIED as the SAME entity without fallback
                     "rg": "4054426",
                     "nome_mae": "MARIA",
                     "nome": "Joaquim",
@@ -271,9 +271,8 @@ class TestDocumentValidator(unittest.TestCase):
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
-        self.assertEqual(len(errors), 6)
+        self.assertEqual(len(errors), 5)  # cpf now matches, the rest are errors
         fields = [e["field"] for e in errors]
-        self.assertIn("entities[0].cpf", fields)
         self.assertIn("entities[0].rg", fields)
         self.assertIn("entities[0].nome_mae", fields)
         self.assertIn("entities[0].nome", fields)
