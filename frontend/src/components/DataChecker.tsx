@@ -84,10 +84,19 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
         }),
       });
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Erro no servidor: Resposta não está em formato JSON. Por favor, tente novamente.');
+      }
+
       const data: ValidationResponse = await response.json();
 
       if (!response.ok) {
-        setServerError(data.error || 'Ocorreu um erro desconhecido durante a validação');
+        if (response.status === 429) {
+           setServerError('Serviço temporariamente indisponível devido ao alto volume (Rate Limit). Por favor, tente novamente em alguns segundos.');
+        } else {
+           setServerError(data.error || 'Ocorreu um erro desconhecido durante a validação');
+        }
       } else {
         setValidationErrors(data.errors || []);
       }
@@ -127,14 +136,23 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
         }),
       });
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Erro no servidor: Resposta não está em formato JSON. Por favor, tente novamente.');
+      }
+
       if (!response.ok) {
         let errorMessage = `Erro HTTP: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (err) {
-          console.warn("Could not parse error response", err);
-            // keep default
+        if (response.status === 429) {
+           errorMessage = 'Serviço temporariamente indisponível devido ao alto volume (Rate Limit). Por favor, tente novamente em alguns segundos.';
+        } else {
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorMessage;
+            } catch (err) {
+              console.warn("Could not parse error response", err);
+                // keep default
+            }
         }
         throw new Error(errorMessage);
       }

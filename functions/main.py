@@ -66,12 +66,18 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         )
     except Exception as e:
         logger.error("Error in extract_document_data", exc_info=True)
+        status_code = 500
+        error_code = "INTERNAL_ERROR"
+        if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
+            status_code = 429
+            error_code = "RESOURCE_EXHAUSTED"
         return https_fn.Response(
             json.dumps({
                 "error": f"Internal server error: {str(e)}",
+                "code": error_code,
                 "traceback": traceback.format_exc()
             }),
-            status=500,
+            status=status_code,
             content_type="application/json"
         )
 
@@ -344,11 +350,17 @@ def correct_document_text(req: https_fn.Request) -> https_fn.Response:
 
     except Exception as e:
         logger.error("Error in correct_document_text", exc_info=True)
+        status_code = 500
+        error_code = "INTERNAL_ERROR"
+        if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
+            status_code = 429
+            error_code = "RESOURCE_EXHAUSTED"
         return https_fn.Response(
             json.dumps({
                 "error": f"Internal server error: {str(e)}",
+                "code": error_code,
                 "traceback": traceback.format_exc()
             }),
-            status=500,
+            status=status_code,
             content_type="application/json"
         )
