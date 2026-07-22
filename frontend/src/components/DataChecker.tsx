@@ -283,7 +283,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                         {validationErrors.map((error, idx) => (
                           <tr key={idx}>
                             <td className="whitespace-normal break-words py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6 uppercase">
-                              {error.field.replace(/^entities\[(\d+)\]\./, (match, p1) => `ENTIDADE ${parseInt(p1) + 1} - `).replace(/^document_metadata\./, 'METADADOS - ')}
+                              {error.field.replace(/^entities\[(\d+)\]\./, (_, p1) => `ENTIDADE ${parseInt(p1) + 1} - `).replace(/^document_metadata\./, 'METADADOS - ')}
                             </td>
                             <td className="whitespace-normal break-words px-3 py-4 text-sm">
                               {error.found ? (
