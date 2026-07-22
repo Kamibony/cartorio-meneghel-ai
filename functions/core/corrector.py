@@ -62,9 +62,19 @@ Locate the relevant entity context and update their specific field to match the 
 If the text has a typo, fix it. If the field is missing, insert it naturally.
 
 CRITICAL INSTRUCTIONS:
-1. Do not alter any other words, formatting, or paragraphs outside of the necessary corrections.
-2. Maintain the original document's language (Portuguese) and tone.
-3. Return ONLY the fully corrected text. Do not include markdown blocks, explanations, or any other wrapper text.
+1. STRICT SWAP AND REPLACE: You must completely remove the string found in "Found in Draft" and replace it entirely with "Expected Truth".
+2. DO NOT BLEND OR CONCATENATE: Never append the new data to the old data. Never leave parts of the old data behind.
+3. Do not alter any other words, formatting, or paragraphs outside of the necessary corrections.
+4. Maintain the original document's language (Portuguese) and tone.
+5. Return ONLY the fully corrected text. Do not include markdown blocks, explanations, or any other wrapper text.
+
+ANTI-PATTERNS (DO NOT DO THIS):
+- Bad Example 1 (Blending Date): changing "08" to "06" in "26/08/2000" and returning "26/086/2000".
+- Good Example 1 (Strict Swap): returning "26/06/2000".
+- Bad Example 2 (Appending Name): returning "Ideval Suzarte Lago e João Fàbio Dantas PereiraCAMILA FIGUEIREDO ROCHA e JOAO FABIO DANTAS PEREIRA".
+- Good Example 2 (Strict Swap): returning "CAMILA FIGUEIREDO ROCHA e JOAO FABIO DANTAS PEREIRA".
+- Bad Example 3 (Blending CPF): replacing "702.473.934-45" with "123.456.789-00" and returning "702.4738.934.45-47".
+- Good Example 3 (Strict Swap): returning "123.456.789-00".
 
 Correction Directives:
 {directives_text}
