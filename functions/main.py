@@ -263,3 +263,92 @@ def log_audit_event(req: https_fn.Request) -> https_fn.Response:
             status=500,
             content_type="application/json"
         )
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
+def correct_document_text(req: https_fn.Request) -> https_fn.Response:
+    """
+    Applies semantic corrections to typed text based on validation errors, and performs a verification loop.
+    Accepts POST requests with JSON payload:
+    {"ground_truth": {...}, "typed_text": "...", "validation_errors": [...]}
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    try:
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing JSON payload"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        ground_truth = data.get("ground_truth", {})
+        typed_text = data.get("typed_text", "")
+        validation_errors = data.get("validation_errors", [])
+
+        if not isinstance(ground_truth, dict) or not isinstance(typed_text, str) or not isinstance(validation_errors, list):
+            return https_fn.Response(
+                json.dumps({"error": "Invalid payload types. Expected dict for ground_truth, string for typed_text, and list for validation_errors"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        if not validation_errors:
+            return https_fn.Response(
+                json.dumps({
+                    "status": "success",
+                    "corrected_text": typed_text,
+                    "correction_successful": True,
+                    "verification_errors": []
+                }),
+                status=200,
+                content_type="application/json"
+            )
+
+        from core.corrector import DocumentCorrector
+        from core.validator import DocumentValidator
+
+        # 1. Apply semantic correction using AI
+        corrector = DocumentCorrector()
+        corrected_text = corrector.correct_text(typed_text, validation_errors)
+
+        # 2. Mathematical verification loop
+        # Run the corrected text back through the validator
+        validator = DocumentValidator(ground_truth, corrected_text)
+        verification_errors = validator.validate()
+
+        # Check if the specifically targeted fields still have errors
+        correction_successful = True
+        targeted_fields = {error.get("field") for error in validation_errors if error.get("field")}
+
+        for v_error in verification_errors:
+            if v_error.get("field") in targeted_fields:
+                correction_successful = False
+                break
+
+        return https_fn.Response(
+            json.dumps({
+                "status": "success",
+                "corrected_text": corrected_text,
+                "correction_successful": correction_successful,
+                "verification_errors": verification_errors
+            }),
+            status=200,
+            content_type="application/json"
+        )
+
+    except Exception as e:
+        logger.error("Error in correct_document_text", exc_info=True)
+        return https_fn.Response(
+            json.dumps({
+                "error": f"Internal server error: {str(e)}",
+                "traceback": traceback.format_exc()
+            }),
+            status=500,
+            content_type="application/json"
+        )
