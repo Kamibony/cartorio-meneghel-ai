@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 interface DocumentViewerProps {
   onDataExtracted: (data: any) => void;
@@ -19,6 +20,24 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const { uploadAndExtract } = useDocumentUpload();
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [objectUrls, setObjectUrls] = useState<Record<string, string>>({});
+
+  // Use a ref to keep track of the latest URLs for the unmount cleanup
+  const objectUrlsRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    objectUrlsRef.current = objectUrls;
+  }, [objectUrls]);
+
+  // Cleanup object URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      Object.values(objectUrlsRef.current).forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
 
   const updateUnifiedGroundTruth = (currentFiles: UploadedFile[]) => {
     let unifiedData = {};
@@ -47,7 +66,22 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
           id: Math.random().toString(36).substring(7)
         };
       });
-      setFiles(prev => [...prev, ...newFiles]);
+
+      // Generate object URLs for the new files
+      const newUrls: Record<string, string> = {};
+      newFiles.forEach((f) => {
+        newUrls[f.id] = URL.createObjectURL(f.file);
+      });
+
+      setObjectUrls((prev) => ({ ...prev, ...newUrls }));
+      setFiles(prev => {
+        const updated = [...prev, ...newFiles];
+        // Select the first file if none is selected
+        if (!selectedFileId && updated.length > 0) {
+          setSelectedFileId(updated[0].id);
+        }
+        return updated;
+      });
       setGlobalError(null);
     }
     // reset input so same file can be selected again
@@ -60,7 +94,21 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     setFiles(prev => {
       const newFiles = prev.filter(f => f.id !== id);
       updateUnifiedGroundTruth(newFiles);
+
+      // If the removed file was selected, select another one or null
+      if (selectedFileId === id) {
+        setSelectedFileId(newFiles.length > 0 ? newFiles[0].id : null);
+      }
       return newFiles;
+    });
+
+    setObjectUrls(prev => {
+      const newUrls = { ...prev };
+      if (newUrls[id]) {
+        URL.revokeObjectURL(newUrls[id]);
+        delete newUrls[id];
+      }
+      return newUrls;
     });
   };
 
@@ -176,68 +224,83 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
         </div>
       )}
 
-      <div className="flex-1 p-6 bg-gray-50 flex flex-col items-center justify-start overflow-auto relative">
-        {/* Mock ID Card Container */}
-        <div className="w-full max-w-md bg-white border border-gray-300 rounded-xl shadow-md p-6 relative">
-          <div className="absolute top-0 left-0 w-full h-4 bg-green-700 rounded-t-xl"></div>
-
-          <div className="text-center mb-6 mt-2 border-b-2 border-green-700 pb-2">
-            <h3 className="font-bold text-gray-800 uppercase tracking-wide">República Federativa do Brasil</h3>
-            <p className="text-xs text-gray-500 uppercase">Carteira de Identidade Nacional</p>
-          </div>
-
-          <div className="flex gap-6">
-            <div className="w-1/3 flex flex-col items-center">
-              <div className="w-full aspect-[3/4] bg-gray-200 rounded mb-2 border border-gray-300 flex items-center justify-center">
-                <span className="text-gray-400 text-xs">Foto</span>
-              </div>
-              <div className="w-full h-12 bg-gray-200 rounded border border-gray-300 flex items-center justify-center">
-                <span className="text-gray-400 text-[10px]">Assinatura</span>
-              </div>
-            </div>
-
-            <div className="w-2/3 space-y-3">
-              <div>
-                <p className="text-[10px] text-gray-500 font-semibold uppercase">Nome</p>
-                <p className="text-sm font-bold text-gray-900 border border-transparent hover:border-blue-300 hover:bg-blue-50 cursor-crosshair rounded px-1 -ml-1">JOAO DA SILVA</p>
-              </div>
-
-              <div className="flex gap-4">
-                <div>
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase">CPF</p>
-                  <p className="text-sm font-bold text-gray-900 border border-transparent hover:border-blue-300 hover:bg-blue-50 cursor-crosshair rounded px-1 -ml-1">702.478.934-47</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase">RG</p>
-                  <p className="text-sm font-bold text-gray-900 border border-transparent hover:border-blue-300 hover:bg-blue-50 cursor-crosshair rounded px-1 -ml-1">4054425</p>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] text-gray-500 font-semibold uppercase">Filiação</p>
-                <div className="border border-transparent hover:border-blue-300 hover:bg-blue-50 cursor-crosshair rounded px-1 -ml-1">
-                  <p className="text-sm font-bold text-gray-900">CARLOS DA SILVA</p>
-                  <p className="text-sm font-bold text-gray-900">CAMILA FIGUEIREDO ROCHA</p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div>
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase">Data de Nascimento</p>
-                  <p className="text-sm font-bold text-gray-900 border border-transparent hover:border-blue-300 hover:bg-blue-50 cursor-crosshair rounded px-1 -ml-1">15/05/1985</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase">Naturalidade</p>
-                  <p className="text-sm font-bold text-gray-900 border border-transparent hover:border-blue-300 hover:bg-blue-50 cursor-crosshair rounded px-1 -ml-1">SÃO PAULO - SP</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-gray-200 text-center">
-            <p className="text-xs text-gray-400 italic">This is a mock representation of a scanned document. In production, this would render an image with bounding box overlays from Document AI.</p>
-          </div>
+      {files.length > 0 && (
+        <div className="bg-gray-100 border-b border-gray-200 px-4 py-2 flex gap-2 overflow-x-auto">
+          {files.map(f => (
+            <button
+              key={f.id}
+              onClick={() => setSelectedFileId(f.id)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
+                selectedFileId === f.id
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {f.documentType} - <span className="text-xs opacity-80">{f.file.name.substring(0, 10)}...</span>
+            </button>
+          ))}
         </div>
+      )}
+
+      <div className="flex-1 bg-gray-50 flex flex-col items-center justify-center overflow-hidden relative p-4">
+        {selectedFileId && objectUrls[selectedFileId] ? (
+          (() => {
+            const selectedFile = files.find(f => f.id === selectedFileId);
+            const isPdf = selectedFile?.file.type === 'application/pdf';
+            const url = objectUrls[selectedFileId];
+
+            if (isPdf) {
+              return (
+                <div className="w-full h-full border border-gray-300 rounded shadow-sm bg-white overflow-hidden">
+                  <object data={url} type="application/pdf" className="w-full h-full">
+                    <p>Seu navegador não suporta a visualização de PDFs. <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Baixar PDF</a></p>
+                  </object>
+                </div>
+              );
+            }
+
+            return (
+              <div className="w-full h-full border border-gray-300 rounded shadow-sm bg-white overflow-hidden relative">
+                <TransformWrapper
+                  initialScale={1}
+                  minScale={0.5}
+                  maxScale={5}
+                  centerOnInit={true}
+                  wheel={{ step: 0.1 }}
+                >
+                  {({ zoomIn, zoomOut, resetTransform }) => (
+                    <>
+                      <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-white/80 backdrop-blur-sm p-1.5 rounded-lg shadow-md border border-gray-200">
+                        <button onClick={() => zoomIn()} className="p-1.5 hover:bg-gray-100 rounded text-gray-700" title="Zoom In">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+                        </button>
+                        <button onClick={() => zoomOut()} className="p-1.5 hover:bg-gray-100 rounded text-gray-700" title="Zoom Out">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" /></svg>
+                        </button>
+                        <button onClick={() => resetTransform()} className="p-1.5 hover:bg-gray-100 rounded text-gray-700" title="Reset Zoom">
+                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                        </button>
+                      </div>
+                      <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
+                        <img
+                          src={url}
+                          alt="Document Preview"
+                          className="max-w-full max-h-full object-contain"
+                          draggable={false}
+                        />
+                      </TransformComponent>
+                    </>
+                  )}
+                </TransformWrapper>
+              </div>
+            );
+          })()
+        ) : (
+          <div className="text-gray-400 text-sm flex flex-col items-center">
+            <svg className="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            Nenhum documento selecionado para visualização
+          </div>
+        )}
       </div>
     </div>
   );
