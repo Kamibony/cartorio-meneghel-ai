@@ -49,13 +49,45 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     setGlobalError(null);
 
     const unifiedData: any = {};
+    const entityMap = new Map<string, any>();
+
     files.forEach(f => {
       if (f.status === 'completed' && f.data) {
         if (f.data.entities && Array.isArray(f.data.entities)) {
-          if (!unifiedData.entities) {
-            unifiedData.entities = [];
-          }
-          unifiedData.entities.push(...f.data.entities);
+          f.data.entities.forEach((entity: any) => {
+            // Clean/normalize keys
+            const rawCpf = entity.cpf || entity.cpf_requerente || '';
+            const rawName = entity.nome || entity.nome_requerente || '';
+            const cpf = String(rawCpf).replace(/[^\d]/g, '');
+
+            // Generate a normalization key. Use Name if CPF is completely missing.
+            let key = '';
+            if (cpf) {
+                key = `cpf_${cpf}`;
+            } else if (rawName) {
+                // simple normalization for keying
+                const normalizedName = String(rawName)
+                    .toLowerCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^a-z0-9]/g, '');
+                if (normalizedName) {
+                    key = `name_${normalizedName}`;
+                }
+            }
+
+            // If we have a valid key (it has a CPF or a Name), we merge it.
+            // Otherwise, we filter it out (rogue empty entity).
+            if (key) {
+                if (entityMap.has(key)) {
+                    // Deep merge properties
+                    const existingEntity = entityMap.get(key);
+                    entityMap.set(key, { ...existingEntity, ...entity });
+                } else {
+                    entityMap.set(key, { ...entity });
+                }
+            }
+          });
         }
 
         for (const key in f.data) {
@@ -65,6 +97,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
         }
       }
     });
+
+    if (entityMap.size > 0) {
+        unifiedData.entities = Array.from(entityMap.values());
+    }
+
     onDataExtracted(Object.keys(unifiedData).length > 0 ? unifiedData : null);
   }, [files, onDataExtracted]);
 
