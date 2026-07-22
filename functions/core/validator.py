@@ -138,32 +138,17 @@ class DocumentValidator:
         if self._extractor_instance is None:
             self._extractor_instance = DocumentExtractor()
 
-        # Build schema to pass to extractor
-        is_nested = "document_metadata" in self.ground_truth or "entities" in self.ground_truth
-
-        if is_nested:
-            schema = {}
-            if "document_metadata" in self.ground_truth:
-                schema["document_metadata"] = list(self.ground_truth["document_metadata"].keys())
-            if "entities" in self.ground_truth and isinstance(self.ground_truth["entities"], list) and len(self.ground_truth["entities"]) > 0:
-                # Aggregate all unique keys from all entities
-                entity_keys = set()
-                for entity in self.ground_truth["entities"]:
-                    if isinstance(entity, dict):
-                        entity_keys.update(entity.keys())
-                schema["entities"] = list(entity_keys)
-        else:
-            # Legacy flat schema
-            schema = list(self.ground_truth.keys())
-
-        draft_json = self._extractor_instance.extract_from_text(self.typed_text, schema)
+        draft_json = self._extractor_instance.extract_from_text(self.typed_text)
 
         # 2. Deterministic validation
 
         # Validate metadata if present
-        if "document_metadata" in self.ground_truth:
-             draft_metadata = draft_json.get("document_metadata", {})
-             self._validate_node("document_metadata", self.ground_truth["document_metadata"], draft_metadata)
+        # In the "Extract, Map, & Judge" architecture, we intentionally DO NOT compare document_metadata
+        # between the Identity Source (e.g., CNH) and the Draft (e.g., Procuração), as this causes false positives.
+        # We only care about matching and validating entities.
+        # if "document_metadata" in self.ground_truth:
+        #      draft_metadata = draft_json.get("document_metadata", {})
+        #      self._validate_node("document_metadata", self.ground_truth["document_metadata"], draft_metadata)
 
         # Validate entities if present
         if "entities" in self.ground_truth and isinstance(self.ground_truth["entities"], list):
@@ -262,6 +247,11 @@ class DocumentValidator:
                 })
                 return
             for key, expected_val in expected_node.items():
+                # CORE_IDENTITY_FIELDS Check
+                # Skip validation for non-core fields during entity comparisons to prevent false positives on roles and metadata
+                if 'entities' in path and key not in CORE_IDENTITY_FIELDS:
+                    continue
+
                 current_path = f"{path}.{key}" if path else key
                 found_val = found_node.get(key)
                 self._validate_node(current_path, expected_val, found_val)
@@ -271,6 +261,9 @@ class DocumentValidator:
                 return
 
             leaf_key = path.split('.')[-1]
+
+            if leaf_key not in CORE_IDENTITY_FIELDS and 'entities' in path:
+                return
 
             if found_node is None:
                 if leaf_key in CORE_IDENTITY_FIELDS:

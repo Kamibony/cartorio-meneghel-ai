@@ -53,13 +53,13 @@ class DocumentExtractor:
                 "Do not include markdown blocks or any other text outside the JSON."
             )
         else:
+            # Profile A: Source Identities (Ground Truth)
             prompt = (
-                "Analyze this document. Extract all relevant structured data based on the following schema constraints: "
-                "1. Isolate document-level properties (e.g., instrument type) into a 'document_metadata' object. "
-                "2. Extract person-level identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, spouse details) "
-                "into an 'entities' array. Each object in this array represents a distinct person and MUST include a 'role' attribute (e.g., 'OUTORGANTE', 'PROCURADOR', 'COMPRADOR', 'VENDEDOR'). "
-                "STRICTLY EXCLUDE all notary metadata, fees, and footers (e.g., emolumentos, selo_digital, cartorio_endereco, nome_escrevente, data_emissao). "
-                "Return the data strictly as a valid JSON object with top-level keys 'document_metadata' and 'entities'. "
+                "Analyze this identity document (e.g., CNH, RG, Certidão). Extract a pure 'Identity Profile'. "
+                "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
+                "Place the data into an 'entities' array. Each object in this array represents a distinct person. "
+                "COMPLETELY DISCARD the 'document type' or any 'role' (e.g., ignore 'Titular'). Treat the document purely as a database of personal facts. "
+                "Return the data strictly as a valid JSON object with a top-level key 'entities'. "
                 "Translate all keys and values into Brazilian Portuguese (pt-BR). "
                 "Do not include markdown blocks or any other text outside the JSON."
             )
@@ -97,15 +97,14 @@ class DocumentExtractor:
             tb_str = traceback.format_exc()
             raise Exception(f"Extraction failed: {str(e)}\nTraceback: {tb_str}") from e
 
-    def extract_from_text(self, text: str, ground_truth_keys: list) -> Dict[str, Any]:
+    def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
         Extracts structured data from raw text using Gemini 2.5 Flash, returning
-        a JSON object strictly matching the provided ground truth keys.
+        a JSON object for the drafted document.
         Uses temperature=0.0 to reduce hallucinations.
 
         Args:
             text (str): The raw draft text to analyze.
-            ground_truth_keys (list): List of expected keys in the output JSON.
 
         Returns:
             Dict[str, Any]: The extracted structured data.
@@ -115,20 +114,15 @@ class DocumentExtractor:
 
         client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
 
-        # If ground_truth_keys is a list, it's a legacy flat schema
-        # If it's a dict containing document_metadata/entities, it's the new nested schema
-        is_nested = isinstance(ground_truth_keys, dict) and ("document_metadata" in ground_truth_keys or "entities" in ground_truth_keys)
-
-        if is_nested:
-            schema_constraint = "It must contain a 'document_metadata' object and an 'entities' array of objects with a 'role' attribute."
-        else:
-            schema_constraint = "The output MUST be a strictly flat JSON object (no nested objects or dictionaries)."
-
+        # Profile B: Legal Drafts
         prompt = (
-            "Analyze the following document text and extract all relevant structured data. "
-            f"The output MUST be a valid JSON object matching EXACTLY the keys/structure described here: {ground_truth_keys}. "
-            f"{schema_constraint} "
-            "Translate all values into Brazilian Portuguese (pt-BR). "
+            "Analyze the following legal draft text and extract all relevant structured data. "
+            "1. Extract document-level properties (e.g., instrument type) into a 'document_metadata' object. "
+            "2. Extract the entities mentioned within the text into an 'entities' array. "
+            "Each object in this array MUST include their assigned legal 'role' (e.g., 'OUTORGANTE', 'OUTORGADO', 'VENDEDOR') "
+            "and their listed personal data (e.g., nome, cpf, rg). "
+            "The output MUST be a strictly valid JSON object containing exactly the top-level keys 'document_metadata' and 'entities'. "
+            "Translate all keys and values into Brazilian Portuguese (pt-BR). "
             "If a field is not found or cannot be determined, set its value to null. "
             "Do not include markdown blocks or any other text outside the JSON."
         )
