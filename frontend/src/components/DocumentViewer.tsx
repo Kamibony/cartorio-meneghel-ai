@@ -48,14 +48,25 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     }
     setGlobalError(null);
 
-    let unifiedData = {};
+    const unifiedData: any = {};
     files.forEach(f => {
       if (f.status === 'completed' && f.data) {
-        unifiedData = { ...unifiedData, ...f.data };
+        if (f.data.entities && Array.isArray(f.data.entities)) {
+          if (!unifiedData.entities) {
+            unifiedData.entities = [];
+          }
+          unifiedData.entities.push(...f.data.entities);
+        }
+
+        for (const key in f.data) {
+          if (key !== 'entities') {
+            unifiedData[key] = f.data[key];
+          }
+        }
       }
     });
     onDataExtracted(Object.keys(unifiedData).length > 0 ? unifiedData : null);
-  }, [files]);
+  }, [files, onDataExtracted]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
