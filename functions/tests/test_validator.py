@@ -53,9 +53,17 @@ from unittest.mock import MagicMock
 class TestDocumentValidator(unittest.TestCase):
     def setUp(self):
         self.ground_truth = {
-            "cpf": "702.478.934-47",
-            "rg": "4054425",
-            "nome_mae": "CAMILA FIGUEIREDO ROCHA"
+            "document_metadata": {
+                "tipo_instrumento": "PROCURAÇÃO PÚBLICA"
+            },
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
 
     def test_all_match(self):
@@ -65,9 +73,17 @@ class TestDocumentValidator(unittest.TestCase):
         # Mock the extractor behavior
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.478.934-47",
-            "rg": "4054425",
-            "nome_mae": "Câmila Figuêiredo ROCHÁ"
+            "document_metadata": {
+                "tipo_instrumento": "PROCURAÇÃO PÚBLICA"
+            },
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome_mae": "Câmila Figuêiredo ROCHÁ",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
@@ -80,17 +96,22 @@ class TestDocumentValidator(unittest.TestCase):
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.473.934-45",
-            "rg": "4054425",
-            "nome_mae": "CAMILA FIGUEIREDO ROCHA"
+            "entities": [
+                {
+                    "cpf": "702.473.934-45",
+                    "rg": "4054425",
+                    "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "cpf")
+        self.assertEqual(errors[0]["field"], "entities[0].cpf")
         self.assertEqual(errors[0]["level"], "critical")
-        self.assertIn("O campo 'cpf' não confere. Esperado: 70247893447, Encontrado: 70247393445", errors[0]["message"])
+        self.assertIn("O campo 'entities[0].cpf' não confere. Esperado: 70247893447, Encontrado: 70247393445", errors[0]["message"])
 
     def test_rg_mismatch(self):
         typed_text = "O cpf 702.478.934-47 e o rg 4054426 de Joao, filho de CAMILA FIGUEIREDO ROCHA."
@@ -98,17 +119,22 @@ class TestDocumentValidator(unittest.TestCase):
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.478.934-47",
-            "rg": "4054426",
-            "nome_mae": "CAMILA FIGUEIREDO ROCHA"
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054426",
+                    "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "rg")
+        self.assertEqual(errors[0]["field"], "entities[0].rg")
         self.assertEqual(errors[0]["level"], "critical")
-        self.assertIn("O campo 'rg' não confere. Esperado: 4054425, Encontrado: 4054426", errors[0]["message"])
+        self.assertIn("O campo 'entities[0].rg' não confere. Esperado: 4054425, Encontrado: 4054426", errors[0]["message"])
 
     def test_mae_not_found(self):
         typed_text = "O cpf 702.478.934-47 e o rg 4054425 de Joao, filho de MARIA FIGUEIREDO ROCHA."
@@ -116,17 +142,22 @@ class TestDocumentValidator(unittest.TestCase):
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.478.934-47",
-            "rg": "4054425",
-            "nome_mae": "MARIA FIGUEIREDO ROCHA"
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome_mae": "MARIA FIGUEIREDO ROCHA",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "nome_mae")
+        self.assertEqual(errors[0]["field"], "entities[0].nome_mae")
         self.assertEqual(errors[0]["level"], "critical")
-        self.assertIn("O campo 'nome_mae' não confere. Esperado: 'CAMILA FIGUEIREDO ROCHA', Encontrado: 'MARIA FIGUEIREDO ROCHA'", errors[0]["message"])
+        self.assertIn("O campo 'entities[0].nome_mae' não confere. Esperado: 'CAMILA FIGUEIREDO ROCHA', Encontrado: 'MARIA FIGUEIREDO ROCHA'", errors[0]["message"])
 
     def test_multiple_errors(self):
         typed_text = "O cpf 702.473.934-45 e o rg 4054426 de Joao, filho de MARIA."
@@ -134,18 +165,23 @@ class TestDocumentValidator(unittest.TestCase):
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.473.934-45",
-            "rg": "4054426",
-            "nome_mae": "MARIA"
+            "entities": [
+                {
+                    "cpf": "702.473.934-45",
+                    "rg": "4054426",
+                    "nome_mae": "MARIA",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 3)
         fields = [e["field"] for e in errors]
-        self.assertIn("cpf", fields)
-        self.assertIn("rg", fields)
-        self.assertIn("nome_mae", fields)
+        self.assertIn("entities[0].cpf", fields)
+        self.assertIn("entities[0].rg", fields)
+        self.assertIn("entities[0].nome_mae", fields)
 
     def test_filiation_matches_different_casing_and_accents(self):
         typed_text = "O cpf 702.478.934-47 e o rg 4054425 de Joao, filho de Câmila Figuêiredo ROCHÁ."
@@ -153,9 +189,14 @@ class TestDocumentValidator(unittest.TestCase):
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.478.934-47",
-            "rg": "4054425",
-            "nome_mae": "Câmila Figuêiredo ROCHÁ"
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome_mae": "Câmila Figuêiredo ROCHÁ",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
@@ -163,13 +204,13 @@ class TestDocumentValidator(unittest.TestCase):
         self.assertEqual(len(errors), 0)
 
     def test_missing_expected_keys(self):
-        ground_truth = {"cpf": "702.478.934-47"}
+        ground_truth = {"entities": [{"cpf": "702.478.934-47"}]}
         typed_text = "O cpf 702.478.934-47 está aqui."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.478.934-47"
+            "entities": [{"cpf": "702.478.934-47"}]
         }
         validator._extractor_instance = mock_extractor
 
@@ -182,49 +223,62 @@ class TestDocumentValidator(unittest.TestCase):
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.478.934-47",
-            "rg": "4054425"
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome": "JOAO DA SILVA"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "nome_mae")
+        self.assertEqual(errors[0]["field"], "entities[0].nome_mae")
         self.assertEqual(errors[0]["level"], "critical")
-        self.assertIn("O campo 'nome_mae' não foi encontrado no texto.", errors[0]["message"])
+        self.assertIn("O campo 'entities[0].nome_mae' não foi encontrado no texto.", errors[0]["message"])
 
     def test_multiple_new_fields(self):
         ground_truth = {
-            "cpf": "702.478.934-47",
-            "rg": "4054425",
-            "nome_mae": "CAMILA FIGUEIREDO ROCHA",
-            "nome": "JOAO DA SILVA",
-            "data_nascimento": "01/01/1990",
-            "naturalidade": "SAO PAULO"
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+                    "nome": "JOAO DA SILVA",
+                    "data_nascimento": "01/01/1990",
+                    "naturalidade": "SAO PAULO"
+                }
+            ]
         }
         typed_text = "O cpf 702.473.934-45 e o rg 4054426 de Joaquim, nascido em 02/02/1990 em Rio de Janeiro, filho de MARIA."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "cpf": "702.473.934-45",
-            "rg": "4054426",
-            "nome_mae": "MARIA",
-            "nome": "Joaquim",
-            "data_nascimento": "02/02/1990",
-            "naturalidade": "Rio de Janeiro"
+            "entities": [
+                {
+                    "cpf": "702.473.934-45",
+                    "rg": "4054426",
+                    "nome_mae": "MARIA",
+                    "nome": "Joaquim",
+                    "data_nascimento": "02/02/1990",
+                    "naturalidade": "Rio de Janeiro"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 6)
         fields = [e["field"] for e in errors]
-        self.assertIn("cpf", fields)
-        self.assertIn("rg", fields)
-        self.assertIn("nome_mae", fields)
-        self.assertIn("nome", fields)
-        self.assertIn("data_nascimento", fields)
-        self.assertIn("naturalidade", fields)
+        self.assertIn("entities[0].cpf", fields)
+        self.assertIn("entities[0].rg", fields)
+        self.assertIn("entities[0].nome_mae", fields)
+        self.assertIn("entities[0].nome", fields)
+        self.assertIn("entities[0].data_nascimento", fields)
+        self.assertIn("entities[0].naturalidade", fields)
 
     def test_flat_dict_handling(self):
         ground_truth = {
@@ -320,82 +374,111 @@ class TestDocumentValidator(unittest.TestCase):
 class TestDiverseNotarialActs(unittest.TestCase):
     def test_escritura_compra_venda(self):
         ground_truth = {
-            "nome_vendedor_1": {"nome": "JOAO VENDEDOR", "cpf": "111.111.111-11", "rg": "1111111"},
-            "nome_vendedor_2": {"nome": "MARIA VENDEDORA", "cpf": "222.222.222-22", "rg": "2222222"},
-            "nome_comprador_1": {"nome": "PEDRO COMPRADOR", "cpf": "333.333.333-33", "rg": "3333333"},
-            "nome_comprador_2": {"nome": "ANA COMPRADORA", "cpf": "444.444.444-44", "rg": "4444444"},
-            "non_essential_field_1": "ALGUM VALOR",
-            "emolumentos_valor": "R$ 100,00",
-            "selo_digital": "ABC12345",
-            "cartorio_endereco": "RUA PRINCIPAL, 123"
+            "document_metadata": {
+                "tipo_instrumento": "ESCRITURA",
+                "non_essential_field_1": "ALGUM VALOR",
+                "emolumentos_valor": "R$ 100,00",
+                "selo_digital": "ABC12345",
+                "cartorio_endereco": "RUA PRINCIPAL, 123"
+            },
+            "entities": [
+                {"role": "VENDEDOR", "nome": "JOAO VENDEDOR", "cpf": "111.111.111-11", "rg": "1111111"},
+                {"role": "VENDEDOR", "nome": "MARIA VENDEDORA", "cpf": "222.222.222-22", "rg": "2222222"},
+                {"role": "COMPRADOR", "nome": "PEDRO COMPRADOR", "cpf": "333.333.333-33", "rg": "3333333"},
+                {"role": "COMPRADOR", "nome": "ANA COMPRADORA", "cpf": "444.444.444-44", "rg": "4444444"}
+            ]
         }
         typed_text = "Escritura de Compra e Venda..."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "nome_vendedor_1": {"nome": "JOAO VENDEDOR", "cpf": "111.111.111-11", "rg": "1111111"},
-            "nome_vendedor_2": {"nome": "MARIA VENDEDORA", "cpf": "222.222.222-22", "rg": "2222220"},
-            "nome_comprador_1": {"nome": "PEDRO COMPRADOR", "cpf": "333.333.333-33", "rg": "3333333"},
-            "nome_comprador_2": {"nome": "ANA COMPRADORA", "cpf": "444.444.444-44", "rg": "4444444"},
+            "entities": [
+                {"role": "VENDEDOR", "nome": "JOAO VENDEDOR", "cpf": "111.111.111-11", "rg": "1111111"},
+                {"role": "VENDEDOR", "nome": "MARIA VENDEDORA", "cpf": "222.222.222-22", "rg": "2222220"},
+                {"role": "COMPRADOR", "nome": "PEDRO COMPRADOR", "cpf": "333.333.333-33", "rg": "3333333"},
+                {"role": "COMPRADOR", "nome": "ANA COMPRADORA", "cpf": "444.444.444-44", "rg": "4444444"}
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "nome_vendedor_2.rg")
+        self.assertEqual(errors[0]["field"], "entities[1].rg")
         self.assertEqual(errors[0]["level"], "critical")
         self.assertIn("2222222", errors[0]["message"])
         self.assertIn("2222220", errors[0]["message"])
 
     def test_inventario_e_partilha(self):
         ground_truth = {
-            "de_cujus": {"nome": "FALECIDO DA SILVA", "cpf": "555.555.555-55", "data_nascimento": "1940-05-10"},
-            "herdeiro": {"nome": "HERDEIRO DA SILVA", "cpf": "666.666.666-66", "data_nascimento": "1970-01-01"},
-            "non_essential_field_2": "ALGUMA INFO",
-            "emolumentos_valor": "R$ 500,00"
+            "document_metadata": {
+                "tipo_instrumento": "INVENTÁRIO E PARTILHA",
+                "non_essential_field_2": "ALGUMA INFO",
+                "emolumentos_valor": "R$ 500,00"
+            },
+            "entities": [
+                {"role": "DE_CUJUS", "nome": "FALECIDO DA SILVA", "cpf": "555.555.555-55", "data_nascimento": "1940-05-10"},
+                {"role": "HERDEIRO", "nome": "HERDEIRO DA SILVA", "cpf": "666.666.666-66", "data_nascimento": "1970-01-01"}
+            ]
         }
         typed_text = "Inventário e Partilha..."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "de_cujus": {"nome": "FALECIDO DA SILVA", "cpf": "555.555.555-55", "data_nascimento": "10/05/1940"},
-            "herdeiro": {"nome": "HERDEIRA DA SILVA", "cpf": "666.666.666-66", "data_nascimento": "1970-01-01"}
+            "entities": [
+                {"role": "DE_CUJUS", "nome": "FALECIDO DA SILVA", "cpf": "555.555.555-55", "data_nascimento": "10/05/1940"},
+                {"role": "HERDEIRO", "nome": "HERDEIRA DA SILVA", "cpf": "666.666.666-66", "data_nascimento": "1970-01-01"}
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
-        self.assertEqual(errors[0]["field"], "herdeiro.nome")
+        self.assertEqual(errors[0]["field"], "entities[1].nome")
         self.assertEqual(errors[0]["level"], "critical")
         self.assertIn("HERDEIRO DA SILVA", errors[0]["message"])
         self.assertIn("HERDEIRA DA SILVA", errors[0]["message"])
 
     def test_procuracao_publica(self):
         ground_truth = {
-            "nome_requerente": "OUTORGANTE DA SILVA",
-            "cpf_requerente": "777.777.777-77",
-            "estado_civil": "CASADO",
-            "selo_digital": "XYZ987",
-            "cartorio_endereco": "AVENIDA CENTRAL"
+            "document_metadata": {
+                "tipo_instrumento": "PROCURAÇÃO PÚBLICA",
+                "selo_digital": "XYZ987",
+                "cartorio_endereco": "AVENIDA CENTRAL"
+            },
+            "entities": [
+                {
+                    "role": "OUTORGANTE",
+                    "nome_requerente": "OUTORGANTE DA SILVA",
+                    "cpf_requerente": "777.777.777-77",
+                    "cpf": "777.777.777-77",
+                    "estado_civil": "CASADO"
+                }
+            ]
         }
         typed_text = "Procuração Pública..."
         validator = DocumentValidator(ground_truth, typed_text)
 
         mock_extractor = MagicMock()
         mock_extractor.extract_from_text.return_value = {
-            "nome_requerente": "OUTORGANTE DA SILVA",
-            "cpf_requerente": "777.777.777-78",
-            "estado_civil": "SOLTEIRO",
+            "entities": [
+                {
+                    "role": "OUTORGANTE",
+                    "nome_requerente": "OUTORGANTE DA SILVA",
+                    "cpf_requerente": "777.777.777-78",
+                    "cpf": "777.777.777-78",
+                    "estado_civil": "SOLTEIRO"
+                }
+            ]
         }
         validator._extractor_instance = mock_extractor
 
         errors = validator.validate()
-        self.assertEqual(len(errors), 2)
+        self.assertEqual(len(errors), 3) # cpf, cpf_requerente, estado_civil
         fields = [e["field"] for e in errors]
-        self.assertIn("cpf_requerente", fields)
-        self.assertIn("estado_civil", fields)
+        self.assertIn("entities[0].cpf_requerente", fields)
+        self.assertIn("entities[0].estado_civil", fields)
 
 if __name__ == '__main__':
     unittest.main()
