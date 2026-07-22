@@ -116,14 +116,16 @@ class DocumentValidator:
       2. Deterministically compare the extracted JSON to the `ground_truth` using pure Python.
     """
     def __init__(self, ground_truth: Dict[str, Any], typed_text: str):
-        # Pre-filter ground truth to remove notary metadata and keep only identity data
-        filtered_ground_truth = {}
-        for key, value in ground_truth.items():
-            key_lower = key.lower()
-            if not any(meta_key in key_lower for meta_key in NOTARY_METADATA_KEYS):
-                filtered_ground_truth[key] = value
+        self.ground_truth = ground_truth.copy()
 
-        self.ground_truth = filtered_ground_truth
+        if "document_metadata" in self.ground_truth and isinstance(self.ground_truth["document_metadata"], dict):
+            filtered_metadata = {}
+            for key, value in self.ground_truth["document_metadata"].items():
+                key_lower = key.lower()
+                if not any(meta_key in key_lower for meta_key in NOTARY_METADATA_KEYS):
+                    filtered_metadata[key] = value
+            self.ground_truth["document_metadata"] = filtered_metadata
+
         self.typed_text = typed_text
         self.errors = []
         self._extractor_instance = None
@@ -136,11 +138,105 @@ class DocumentValidator:
         if self._extractor_instance is None:
             self._extractor_instance = DocumentExtractor()
 
-        keys_to_extract = list(self.ground_truth.keys())
-        draft_json = self._extractor_instance.extract_from_text(self.typed_text, keys_to_extract)
+        # Build schema to pass to extractor
+        is_nested = "document_metadata" in self.ground_truth or "entities" in self.ground_truth
+
+        if is_nested:
+            schema = {}
+            if "document_metadata" in self.ground_truth:
+                schema["document_metadata"] = list(self.ground_truth["document_metadata"].keys())
+            if "entities" in self.ground_truth and isinstance(self.ground_truth["entities"], list) and len(self.ground_truth["entities"]) > 0:
+                # Aggregate all unique keys from all entities
+                entity_keys = set()
+                for entity in self.ground_truth["entities"]:
+                    if isinstance(entity, dict):
+                        entity_keys.update(entity.keys())
+                schema["entities"] = list(entity_keys)
+        else:
+            # Legacy flat schema
+            schema = list(self.ground_truth.keys())
+
+        draft_json = self._extractor_instance.extract_from_text(self.typed_text, schema)
 
         # 2. Deterministic validation
-        self._validate_node("", self.ground_truth, draft_json)
+
+        # Validate metadata if present
+        if "document_metadata" in self.ground_truth:
+             draft_metadata = draft_json.get("document_metadata", {})
+             self._validate_node("document_metadata", self.ground_truth["document_metadata"], draft_metadata)
+
+        # Validate entities if present
+        if "entities" in self.ground_truth and isinstance(self.ground_truth["entities"], list):
+            draft_entities = draft_json.get("entities", [])
+            if not isinstance(draft_entities, list):
+                draft_entities = []
+
+            # Match entities sequentially for testing if strict matching fails
+            # In a real scenario, we might want a more robust assignment problem solution
+            # Try to match entities by CPF, then by name, then by index as fallback
+            used_draft_indices = set()
+            for i, gt_entity in enumerate(self.ground_truth["entities"]):
+                matched_draft_entity = None
+                matched_draft_index = -1
+
+                gt_cpf = normalize_digits(str(gt_entity.get("cpf", "")))
+                if not gt_cpf: # Try alternative keys for CPF
+                    gt_cpf = normalize_digits(str(gt_entity.get("cpf_requerente", "")))
+
+                gt_nome = normalize_string(str(gt_entity.get("nome", "")))
+                if not gt_nome: # Try alternative keys for Nome
+                    gt_nome = normalize_string(str(gt_entity.get("nome_requerente", "")))
+                    if not gt_nome:
+                        gt_nome = normalize_string(str(gt_entity.get("nome_vendedor_1", ""))) # Just examples
+
+                # Match by CPF first
+                if gt_cpf:
+                    for j, d_entity in enumerate(draft_entities):
+                        if j in used_draft_indices:
+                            continue
+                        d_cpf = normalize_digits(str(d_entity.get("cpf", "")))
+                        if not d_cpf:
+                             d_cpf = normalize_digits(str(d_entity.get("cpf_requerente", "")))
+                        if d_cpf == gt_cpf:
+                            matched_draft_entity = d_entity
+                            matched_draft_index = j
+                            break
+
+                # Fallback to name match
+                if not matched_draft_entity and gt_nome:
+                    for j, d_entity in enumerate(draft_entities):
+                        if j in used_draft_indices:
+                            continue
+                        d_nome = normalize_string(str(d_entity.get("nome", "")))
+                        if not d_nome:
+                             d_nome = normalize_string(str(d_entity.get("nome_requerente", "")))
+                        if d_nome == gt_nome:
+                            matched_draft_entity = d_entity
+                            matched_draft_index = j
+                            break
+
+                # If we STILL haven't matched it but it's a test case testing field mismatch,
+                # we should probably fall back to index matching if the arrays are the same size
+                if not matched_draft_entity and i < len(draft_entities) and i not in used_draft_indices:
+                    matched_draft_entity = draft_entities[i]
+                    matched_draft_index = i
+
+                if matched_draft_entity:
+                    used_draft_indices.add(matched_draft_index)
+                    self._validate_node(f"entities[{i}]", gt_entity, matched_draft_entity)
+                else:
+                    self.errors.append({
+                        "field": f"entities[{i}]",
+                        "level": "critical",
+                        "message": f"Entidade não encontrada no texto (esperado CPF: {gt_cpf} ou Nome: {gt_nome}).",
+                        "expected": str(gt_entity),
+                        "found": ""
+                    })
+
+        # For backward compatibility / flat schema support
+        for key, value in self.ground_truth.items():
+            if key not in ["document_metadata", "entities"]:
+                self._validate_node(key, value, draft_json.get(key))
 
         return self.errors
 
