@@ -62,6 +62,8 @@ class DocumentExtractor:
                 "Analyze this identity document (e.g., CNH, RG, Certidão). Extract a pure 'Identity Profile'. "
                 "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
                 "Place the data into an 'entities' array. "
+                "If the same person appears multiple times, merge their data into a single unified entity object (deduplication). "
+                "For the new Brazilian Identity Cards (CIN), the CPF number serves as the RG. In this case, map the CPF number to BOTH the 'cpf' and 'rg' fields. "
                 "Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
                 "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. "
                 "NEVER create standalone entities for parents. "
