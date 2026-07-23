@@ -9,6 +9,7 @@ interface ValidationError {
   message: string;
   expected?: string;
   found?: string;
+  found_in_text?: string;
 }
 
 interface ValidationResponse {
