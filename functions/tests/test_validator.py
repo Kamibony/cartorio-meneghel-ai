@@ -113,6 +113,59 @@ class TestDocumentValidator(unittest.TestCase):
         self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("O campo 'entities[0].cpf' não confere. Esperado: 70247893447, Encontrado: 70247393445", errors[0]["message"])
 
+    def test_fuzzy_match_missing_surname(self):
+        # A draft entity missing a surname should match and proceed to field-level errors (nome)
+        typed_text = "O cpf 702.478.934-47 e o rg 4054425 de Joao, filho de CAMILA FIGUEIREDO ROCHA."
+        validator = DocumentValidator(self.ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "entities": [
+                {
+                    "cpf": "702.478.934-47",
+                    "rg": "4054425",
+                    "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+                    "nome": "JOAO"  # Missing "DA SILVA"
+                }
+            ]
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["field"], "entities[0].nome")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
+        self.assertIn("Esperado: 'JOAO DA SILVA', Encontrado: 'JOAO'", errors[0]["message"])
+
+    def test_unmatched_entity_primary_identifier_proxy(self):
+        # Using a completely different CPF and Name so it falls below threshold
+        typed_text = "O cpf 111.111.111-11 e o rg 4054425 de Pedro, filho de CAMILA FIGUEIREDO ROCHA."
+        validator = DocumentValidator(self.ground_truth, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_from_text.return_value = {
+            "entities": [
+                {
+                    "cpf": "111.111.111-11",
+                    "rg": "4054425",
+                    "nome_mae": "CAMILA FIGUEIREDO ROCHA",
+                    "nome": "PEDRO SANTOS"
+                }
+            ]
+        }
+        validator._extractor_instance = mock_extractor
+
+        errors = validator.validate()
+
+        # We should find an UNMATCHED_ENTITY for the expected Ground Truth
+        # (It couldn't find a match for JOAO DA SILVA in the draft entities)
+        unmatched_errors = [e for e in errors if e["category"] == "UNMATCHED_ENTITY"]
+        self.assertGreaterEqual(len(unmatched_errors), 1)
+
+        err = unmatched_errors[0]
+        self.assertEqual(err["expected"], "JOAO DA SILVA") # Proxied to pure string instead of dict dump
+        self.assertEqual(err["found"], "[Não encontrado no rascunho]")
+
     def test_rg_mismatch(self):
         typed_text = "O cpf 702.478.934-47 e o rg 4054426 de Joao, filho de CAMILA FIGUEIREDO ROCHA."
         validator = DocumentValidator(self.ground_truth, typed_text)

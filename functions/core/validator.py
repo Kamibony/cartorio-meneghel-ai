@@ -1,6 +1,47 @@
 import re
 import unicodedata
-from typing import Dict, Any, List
+import difflib
+from typing import Dict, Any, List, Union
+from dataclasses import dataclass, asdict
+
+@dataclass
+class Discrepancy:
+    field: str
+    category: str
+    message: str
+    expected: str
+    found: str
+
+    def __post_init__(self):
+        def _coerce_to_string(val: Any) -> str:
+            if isinstance(val, str):
+                return val
+            if isinstance(val, dict):
+                return str(val.get("nome") or val.get("cpf") or "[Objeto]")
+            if val is None:
+                return ""
+            if isinstance(val, list):
+                return ", ".join([str(v) for v in val])
+            return str(val)
+
+        self.expected = _coerce_to_string(self.expected)
+        self.found = _coerce_to_string(self.found)
+
+def calculate_entity_similarity(gt_cpf: str, gt_nome: str, d_cpf: str, d_nome: str) -> float:
+    """Calculate a weighted similarity score between two entities."""
+    score = 0.0
+    if gt_cpf and d_cpf:
+        cpf_score = difflib.SequenceMatcher(None, gt_cpf, d_cpf).ratio()
+        if gt_nome and d_nome:
+            name_score = difflib.SequenceMatcher(None, gt_nome, d_nome).ratio()
+            # Weight CPF heavily
+            score = cpf_score * 0.7 + name_score * 0.3
+        else:
+            score = cpf_score
+    elif gt_nome and d_nome:
+        score = difflib.SequenceMatcher(None, gt_nome, d_nome).ratio()
+    return score
+
 
 def normalize_digits(text: str) -> str:
     """Strip all non-numeric characters (keeps X/x for RG)."""
@@ -156,13 +197,12 @@ class DocumentValidator:
             if not isinstance(draft_entities, list):
                 draft_entities = []
 
-            # Match entities sequentially for testing if strict matching fails
-            # In a real scenario, we might want a more robust assignment problem solution
-            # Try to match entities by CPF, then by name, then by index as fallback
+            # Match entities using a Greedy Assignment Algorithm
             used_draft_indices = set()
             for i, gt_entity in enumerate(self.ground_truth["entities"]):
-                matched_draft_entity = None
-                matched_draft_index = -1
+                best_match_entity = None
+                best_match_index = -1
+                best_score = -1.0
 
                 gt_cpf = normalize_digits(str(gt_entity.get("cpf", "")))
                 if not gt_cpf: # Try alternative keys for CPF
@@ -174,50 +214,42 @@ class DocumentValidator:
                     if not gt_nome:
                         gt_nome = normalize_string(str(gt_entity.get("nome_vendedor_1", ""))) # Just examples
 
-                # Match by CPF first
-                if gt_cpf:
-                    for j, d_entity in enumerate(draft_entities):
-                        if j in used_draft_indices:
-                            continue
-                        d_cpf = normalize_digits(str(d_entity.get("cpf", "")))
-                        if not d_cpf:
-                             d_cpf = normalize_digits(str(d_entity.get("cpf_requerente", "")))
-                        if d_cpf == gt_cpf:
-                            matched_draft_entity = d_entity
-                            matched_draft_index = j
-                            break
+                for j, d_entity in enumerate(draft_entities):
+                    if j in used_draft_indices:
+                        continue
 
-                # Fallback to name match
-                if not matched_draft_entity and gt_nome:
-                    for j, d_entity in enumerate(draft_entities):
-                        if j in used_draft_indices:
-                            continue
-                        d_nome = normalize_string(str(d_entity.get("nome", "")))
-                        if not d_nome:
-                             d_nome = normalize_string(str(d_entity.get("nome_requerente", "")))
-                        if d_nome == gt_nome:
-                            matched_draft_entity = d_entity
-                            matched_draft_index = j
-                            break
+                    d_cpf = normalize_digits(str(d_entity.get("cpf", "")))
+                    if not d_cpf:
+                         d_cpf = normalize_digits(str(d_entity.get("cpf_requerente", "")))
 
-                if matched_draft_entity:
-                    used_draft_indices.add(matched_draft_index)
-                    self._validate_node(f"entities[{i}]", gt_entity, matched_draft_entity)
+                    d_nome = normalize_string(str(d_entity.get("nome", "")))
+                    if not d_nome:
+                         d_nome = normalize_string(str(d_entity.get("nome_requerente", "")))
+
+                    score = calculate_entity_similarity(gt_cpf, gt_nome, d_cpf, d_nome)
+                    if score > best_score:
+                        best_score = score
+                        best_match_entity = d_entity
+                        best_match_index = j
+
+                if best_match_entity and best_score >= 0.75:
+                    used_draft_indices.add(best_match_index)
+                    self._validate_node(f"entities[{i}]", gt_entity, best_match_entity)
                 else:
-                    self.errors.append({
-                        "field": f"entities[{i}]",
-                        "category": "UNMATCHED_ENTITY",
-                        "message": f"Entidade não encontrada no texto (esperado CPF: {gt_cpf} ou Nome: {gt_nome}).",
-                        "expected": str(gt_entity),
-                        "found": ""
-                    })
+                    self.errors.append(Discrepancy(
+                        field= f"entities[{i}]",
+                        category= "UNMATCHED_ENTITY",
+                        message= f"Entidade não encontrada no texto (esperado CPF: {gt_cpf} ou Nome: {gt_nome}).",
+                        expected= gt_nome if gt_nome else (gt_cpf if gt_cpf else "[Não esperado]"),
+                        found= "[Não encontrado no rascunho]"
+                    ))
 
         # For backward compatibility / flat schema support
         for key, value in self.ground_truth.items():
             if key not in ["document_metadata", "entities"]:
                 self._validate_node(key, value, draft_json.get(key))
 
-        return self.errors
+        return [asdict(e) for e in self.errors]
 
     def _validate_node(self, path: str, expected_node: Any, found_node: Any) -> None:
         def format_val(val: Any) -> str:
@@ -232,13 +264,16 @@ class DocumentValidator:
 
         if isinstance(expected_node, dict):
             if not isinstance(found_node, dict):
-                self.errors.append({
-                    "field": path if path else "root",
-                    "category": "VALUE_MISMATCH",
-                    "message": f"O campo '{path}' deveria ser um objeto (dicionário), mas não é.",
-                    "expected": expected_str_raw,
-                    "found": found_str_raw
-                })
+                # Ensure we don't leak full stringified dicts to the frontend
+                clean_expected = expected_node.get("nome") or expected_node.get("cpf") or "[Objeto]"
+                clean_found = found_node if isinstance(found_node, str) else "[Não encontrado ou tipo incorreto]"
+                self.errors.append(Discrepancy(
+                    field= path if path else "root",
+                    category= "VALUE_MISMATCH",
+                    message= f"O campo '{path}' deveria ser um objeto (dicionário), mas não é.",
+                    expected= str(clean_expected),
+                    found= str(clean_found)
+                ))
                 return
             for key, expected_val in expected_node.items():
                 # CORE_IDENTITY_FIELDS Check
@@ -261,37 +296,37 @@ class DocumentValidator:
 
             if found_node is None:
                 if leaf_key in CORE_IDENTITY_FIELDS:
-                    self.errors.append({
-                        "field": path,
-                        "category": "MISSING_FIELD",
-                        "message": f"O campo '{path}' não foi encontrado no texto.",
-                        "expected": expected_str_raw,
-                        "found": ""
-                    })
+                    self.errors.append(Discrepancy(
+                        field= path,
+                        category= "MISSING_FIELD",
+                        message= f"O campo '{path}' não foi encontrado no texto.",
+                        expected= expected_str_raw,
+                        found= ""
+                    ))
                 return
 
             if leaf_key in ["cpf", "rg"]:
                 norm_expected = normalize_digits(str(expected_node))
                 norm_found = normalize_digits(str(found_node))
                 if norm_expected != norm_found:
-                    self.errors.append({
-                        "field": path,
-                        "category": "VALUE_MISMATCH",
-                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
-                        "expected": expected_str_raw,
-                        "found": found_str_raw
-                    })
+                    self.errors.append(Discrepancy(
+                        field= path,
+                        category= "VALUE_MISMATCH",
+                        message= f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
+                        expected= expected_str_raw,
+                        found= found_str_raw
+                    ))
             elif "data" in leaf_key.lower():
                 norm_expected = normalize_date(str(expected_node))
                 norm_found = normalize_date(str(found_node))
                 if norm_expected != norm_found:
-                    self.errors.append({
-                        "field": path,
-                        "category": "VALUE_MISMATCH",
-                        "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
-                        "expected": expected_str_raw,
-                        "found": found_str_raw
-                    })
+                    self.errors.append(Discrepancy(
+                        field= path,
+                        category= "VALUE_MISMATCH",
+                        message= f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
+                        expected= expected_str_raw,
+                        found= found_str_raw
+                    ))
             elif isinstance(expected_node, list) or isinstance(found_node, list) or "filia" in leaf_key.lower() or "nome" in leaf_key.lower():
                 # For fields that might be lists (filiation, names sometimes extracted as lists of words)
                 norm_expected_list = normalize_list_or_string(expected_node)
@@ -302,33 +337,33 @@ class DocumentValidator:
                     # If dealing with lists of single elements, maybe try simple string check as fallback
                     if len(norm_expected_list) == 1 and len(norm_found_list) == 1:
                         if norm_expected_list[0] != norm_found_list[0]:
-                             self.errors.append({
-                                "field": path,
-                                "category": "VALUE_MISMATCH",
-                                "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'",
-                                "expected": expected_str_raw,
-                                "found": found_str_raw
-                            })
+                             self.errors.append(Discrepancy(
+                                field= path,
+                                category= "VALUE_MISMATCH",
+                                message= f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'",
+                                expected= expected_str_raw,
+                                found= found_str_raw
+                            ))
                     else:
                         expected_str = ", ".join(norm_expected_list)
                         found_str = ", ".join(norm_found_list)
                         if expected_str != found_str:
-                            self.errors.append({
-                                "field": path,
-                                "category": "VALUE_MISMATCH",
-                                "message": f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]",
-                                "expected": expected_str_raw,
-                                "found": found_str_raw
-                            })
+                            self.errors.append(Discrepancy(
+                                field= path,
+                                category= "VALUE_MISMATCH",
+                                message= f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]",
+                                expected= expected_str_raw,
+                                found= found_str_raw
+                            ))
             else:
                 # General Check for all other fields
                 norm_expected_val = normalize_string(str(expected_node))
                 norm_found_val = normalize_string(str(found_node))
                 if norm_expected_val != norm_found_val:
-                    self.errors.append({
-                        "field": path,
-                        "category": "VALUE_MISMATCH",
-                        "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'",
-                        "expected": expected_str_raw,
-                        "found": found_str_raw
-                    })
+                    self.errors.append(Discrepancy(
+                        field= path,
+                        category= "VALUE_MISMATCH",
+                        message= f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'",
+                        expected= expected_str_raw,
+                        found= found_str_raw
+                    ))
