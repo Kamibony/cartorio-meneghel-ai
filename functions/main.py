@@ -304,24 +304,14 @@ def correct_document_text(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
-        if not validation_errors:
-            return https_fn.Response(
-                json.dumps({
-                    "status": "success",
-                    "corrected_text": typed_text,
-                    "correction_successful": True,
-                    "verification_errors": []
-                }),
-                status=200,
-                content_type="application/json"
-            )
+
 
         from core.corrector import DocumentCorrector
         from core.validator import DocumentValidator
 
         # 1. Apply semantic correction using AI
         corrector = DocumentCorrector()
-        corrected_text = corrector.correct_text(typed_text, validation_errors)
+        corrected_text = corrector.correct_text(ground_truth=ground_truth)
 
         # 2. Mathematical verification loop
         # Run the corrected text back through the validator
