@@ -206,7 +206,7 @@ class DocumentValidator:
                 else:
                     self.errors.append({
                         "field": f"entities[{i}]",
-                        "level": "critical",
+                        "category": "UNMATCHED_ENTITY",
                         "message": f"Entidade não encontrada no texto (esperado CPF: {gt_cpf} ou Nome: {gt_nome}).",
                         "expected": str(gt_entity),
                         "found": ""
@@ -234,7 +234,7 @@ class DocumentValidator:
             if not isinstance(found_node, dict):
                 self.errors.append({
                     "field": path if path else "root",
-                    "level": "critical",
+                    "category": "VALUE_MISMATCH",
                     "message": f"O campo '{path}' deveria ser um objeto (dicionário), mas não é.",
                     "expected": expected_str_raw,
                     "found": found_str_raw
@@ -263,7 +263,7 @@ class DocumentValidator:
                 if leaf_key in CORE_IDENTITY_FIELDS:
                     self.errors.append({
                         "field": path,
-                        "level": "critical",
+                        "category": "MISSING_FIELD",
                         "message": f"O campo '{path}' não foi encontrado no texto.",
                         "expected": expected_str_raw,
                         "found": ""
@@ -276,7 +276,7 @@ class DocumentValidator:
                 if norm_expected != norm_found:
                     self.errors.append({
                         "field": path,
-                        "level": "critical",
+                        "category": "VALUE_MISMATCH",
                         "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
                         "expected": expected_str_raw,
                         "found": found_str_raw
@@ -287,7 +287,7 @@ class DocumentValidator:
                 if norm_expected != norm_found:
                     self.errors.append({
                         "field": path,
-                        "level": "critical",
+                        "category": "VALUE_MISMATCH",
                         "message": f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
                         "expected": expected_str_raw,
                         "found": found_str_raw
@@ -304,7 +304,7 @@ class DocumentValidator:
                         if norm_expected_list[0] != norm_found_list[0]:
                              self.errors.append({
                                 "field": path,
-                                "level": "critical",
+                                "category": "VALUE_MISMATCH",
                                 "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'",
                                 "expected": expected_str_raw,
                                 "found": found_str_raw
@@ -315,7 +315,7 @@ class DocumentValidator:
                         if expected_str != found_str:
                             self.errors.append({
                                 "field": path,
-                                "level": "critical",
+                                "category": "VALUE_MISMATCH",
                                 "message": f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]",
                                 "expected": expected_str_raw,
                                 "found": found_str_raw
@@ -327,7 +327,7 @@ class DocumentValidator:
                 if norm_expected_val != norm_found_val:
                     self.errors.append({
                         "field": path,
-                        "level": "critical",
+                        "category": "VALUE_MISMATCH",
                         "message": f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'",
                         "expected": expected_str_raw,
                         "found": found_str_raw
