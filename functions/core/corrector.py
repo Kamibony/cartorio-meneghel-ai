@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 import traceback
 import threading
 from typing import Dict, Any, List
@@ -43,6 +44,9 @@ class DocumentCorrector:
 
         client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
 
+        blocks = draft_text.split('\n')
+        draft_text_with_blocks = "\n".join(f"[Block {i}] {block}" for i, block in enumerate(blocks))
+
         # Build directives from validation errors
         directives_text = ""
         for idx, error in enumerate(validation_errors):
@@ -57,24 +61,29 @@ class DocumentCorrector:
             directives_text += f"  Found in Draft: {found}\n"
             directives_text += f"  Details: {message}\n"
 
-        prompt = f"""You are a precise text locator for legal documents. Your task is to find the exact substrings in the Draft Text that correspond to the "Found in Draft" values from the Correction Directives.
+        prompt = f"""You are a precise text locator and navigator for legal documents. Your task is to find the exact location in the Draft Text that correspond to the "Found in Draft" values from the Correction Directives.
+The Draft Text is provided as a series of blocks, each prefixed with its block index, like "[Block 0] ...".
 
 For each Correction Directive:
-1. Locate the exact literal matching string in the Draft Text.
-2. The match must be exact, character-for-character, including any surrounding context if necessary to be unique, but ideally just the target phrase.
-3. Map this exact found text to its corresponding "Expected Truth".
+1. Identify the block index containing the text to be replaced.
+2. Identify a short, literal "prefix" string that occurs immediately *before* the target text in that block.
+3. Identify a short, literal "suffix" string that occurs immediately *after* the target text in that block.
+4. The prefix and suffix act as anchors to isolate the bad text. They must be exact, literal strings found in the block.
+5. Provide the "Expected Truth" as the new value.
 
-Return ONLY a JSON array of objects. Each object must have exactly two keys:
-- "exact_text_to_replace": The literal substring found in the Draft Text.
-- "new_value": The "Expected Truth" value that should replace it.
+Return ONLY a JSON array of objects. Each object must have exactly four keys:
+- "block_index": The integer index of the block.
+- "prefix": The safe literal text immediately before the error.
+- "suffix": The safe literal text immediately after the error.
+- "new_value": The "Expected Truth" value that should replace the text between prefix and suffix.
 
-If a directive asks to fix something but you absolutely cannot find the text, simply omit that directive from the JSON array. Do not invent text.
+If a directive asks to fix something but you absolutely cannot find it, simply omit that directive from the JSON array. Do not invent text.
 
 Correction Directives:
 {directives_text}
 
 Draft Text:
-{draft_text}"""
+{draft_text_with_blocks}"""
 
         @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
         def _generate():
@@ -113,23 +122,45 @@ Draft Text:
             if not isinstance(replacements, list):
                 raise ValueError("AI response is not a JSON array.")
 
-            corrected_text = draft_text
             for rep in replacements:
-                exact_text = rep.get("exact_text_to_replace")
+                block_index = rep.get("block_index")
+                prefix = rep.get("prefix", "")
+                suffix = rep.get("suffix", "")
                 new_value = rep.get("new_value")
 
-                if not exact_text or new_value is None:
+                if block_index is None or new_value is None:
                     continue
 
-                if exact_text in corrected_text:
-                    # Using replace with count=1 to be safe, or just let it replace all occurrences if identical
-                    # Replacing 1 occurrence is usually safer for names/dates to avoid collateral if it's duplicated,
-                    # but if there are multiple occurrences of the EXACT same error, we might want to replace all.
-                    # Let's replace all occurrences of this exact text.
-                    corrected_text = corrected_text.replace(exact_text, new_value)
-                else:
-                    logger.warning(f"Could not find exact text '{exact_text}' in draft text. Skipping replacement.")
+                try:
+                    block_index = int(block_index)
+                except ValueError:
+                    logger.warning(f"Invalid block_index '{block_index}' returned by AI. Skipping replacement.")
+                    continue
 
+                if not (0 <= block_index < len(blocks)):
+                    logger.warning(f"Block index {block_index} out of bounds. Skipping replacement.")
+                    continue
+
+                target_block = blocks[block_index]
+
+                # Construct regex pattern to match prefix + (anything) + suffix
+                # We use DOTALL in case there are internal line breaks if blocks weren't split by \n (though they were)
+                pattern_str = re.escape(prefix) + r"(.*?)" + re.escape(suffix)
+                try:
+                    pattern = re.compile(pattern_str, flags=re.DOTALL)
+                    match = pattern.search(target_block)
+                    if match:
+                        start_idx = match.start(1)
+                        end_idx = match.end(1)
+                        # Splice the new value in
+                        blocks[block_index] = target_block[:start_idx] + new_value + target_block[end_idx:]
+                    else:
+                        logger.warning(f"Could not find prefix/suffix anchors '{prefix}' / '{suffix}' in block {block_index}. Skipping replacement.")
+                except re.error as re_err:
+                    logger.warning(f"Failed to compile regex pattern for anchors: {re_err}")
+                    continue
+
+            corrected_text = "\n".join(blocks)
             return corrected_text
 
         except Exception as e:

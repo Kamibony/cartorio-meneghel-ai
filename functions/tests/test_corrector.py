@@ -12,8 +12,8 @@ class TestDocumentCorrector(unittest.TestCase):
 
         # Simulated AI response JSON
         mock_response.text = '''[
-            {"exact_text_to_replace": "26/08/2000", "new_value": "26/06/2000"},
-            {"exact_text_to_replace": "casado", "new_value": "solteiro"}
+            {"block_index": 0, "prefix": "nascido em ", "suffix": ",", "new_value": "26/06/2000"},
+            {"block_index": 0, "prefix": "estado civil ", "suffix": ".", "new_value": "solteiro"}
         ]'''
 
         mock_models.generate_content.return_value = mock_response
@@ -40,7 +40,7 @@ class TestDocumentCorrector(unittest.TestCase):
         mock_response = MagicMock()
 
         mock_response.text = '''[
-            {"exact_text_to_replace": "texto inexistente", "new_value": "novo texto"}
+            {"block_index": 0, "prefix": "nao existe ", "suffix": " aqui", "new_value": "novo texto"}
         ]'''
 
         mock_models.generate_content.return_value = mock_response
@@ -66,6 +66,32 @@ class TestDocumentCorrector(unittest.TestCase):
         # Should return text directly without calling AI
         result = corrector.correct_text(draft_text, [])
         self.assertEqual(result, draft_text)
+
+    @patch('google.genai.Client')
+    def test_whitespace_resilience(self, MockClient):
+        mock_client = MagicMock()
+        mock_models = MagicMock()
+        mock_response = MagicMock()
+
+        mock_response.text = '''[
+            {"block_index": 0, "prefix": "nome é ", "suffix": " , residente", "new_value": "João da Silva"}
+        ]'''
+
+        mock_models.generate_content.return_value = mock_response
+        mock_client.models = mock_models
+        MockClient.return_value = mock_client
+
+        corrector = DocumentCorrector()
+
+        draft_text = "O nome é   João  da Silva , residente"
+        validation_errors = [
+            {"field": "nome", "expected": "João da Silva", "found": "João  da Silva"}
+        ]
+
+        result = corrector.correct_text(draft_text, validation_errors)
+
+        expected_text = "O nome é João da Silva , residente"
+        self.assertEqual(result, expected_text)
 
 if __name__ == '__main__':
     unittest.main()
