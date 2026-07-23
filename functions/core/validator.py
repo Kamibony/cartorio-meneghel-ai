@@ -49,6 +49,9 @@ def normalize_string(text: str) -> str:
     # Strip gender suffixes like (A) or (O/A)
     text = re.sub(r'\([AO](/[AO])?\)', '', text)
 
+    # Normalize common gendered terms to masculine/base form
+    text = re.sub(r'\b(BRASILEIR|SOLTEIR|CASAD|DIVORCIAD|VIUV|SEPARAD)[AO]S?\b', r'\1O', text)
+
     # Strip trailing state slashes (e.g., JOAO PESSOA/PB -> JOAO PESSOA)
     text = re.sub(r'/[A-Z]{2}$', '', text)
 
@@ -133,6 +136,14 @@ class DocumentValidator:
                 continue
 
             if error.category == "VALUE_MISMATCH":
+                # Normalize values to check for false positive mismatches (case, accent, gender suffix)
+                norm_expected = normalize_string(error.expected)
+                norm_found = normalize_string(error.found_in_text)
+
+                if norm_expected == norm_found and norm_expected != "":
+                    logger.warning(f"False positive filtered: '{error.expected}' vs '{error.found_in_text}' resolved to '{norm_expected}'.")
+                    continue
+
                 # Deterministic anchor check
                 if error.found_in_text and error.found_in_text in self.typed_text:
                     validated_discrepancies.append(error)
