@@ -179,3 +179,67 @@ class DocumentExtractor:
             logger.error(f"Error extracting from text: {e}", exc_info=True)
             tb_str = traceback.format_exc()
             raise Exception(f"Extraction from text failed: {str(e)}\nTraceback: {tb_str}") from e
+
+    def audit_draft(self, ground_truth: Dict[str, Any], draft_text: str) -> list[Dict[str, Any]]:
+        """
+        Uses LLM-as-a-Judge to directly compare ground truth against unstructured draft text.
+        Returns a list of raw discrepancies to be filtered by the validator.
+        """
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
+
+        prompt = (
+            "You are an expert legal data auditor for Brazilian Notary Offices (Cartório) evaluating legal draft documents with 100% precision.\n"
+            "You are given two inputs:\n"
+            "1. GROUND_TRUTH: A verified JSON object containing entities and their attributes.\n"
+            "2. DRAFT_TEXT: The raw, unstructured, OCR-extracted text of the draft document.\n\n"
+            "OBJECTIVE: Compare every expected attribute in the GROUND_TRUTH against the DRAFT_TEXT. "
+            "If the data in the draft contradicts the ground truth or is missing, report it as a discrepancy.\n\n"
+            "STRICT RULES:\n"
+            "- NO CORRECTIONS: Do not fix the draft text. Only report discrepancies.\n"
+            "- EXACT SUBSTRING RULE (CRITICAL): For any VALUE_MISMATCH, you MUST extract the literal, exact substring from the DRAFT_TEXT and assign it to the 'found_in_text' field. Do not normalize, fix capitalization, or strip punctuation. If you cannot extract the exact substring, you must not report a mismatch.\n"
+            "- MISSING DATA: If an expected field is completely absent from the DRAFT_TEXT, report a MISSING_FIELD and set 'found_in_text' to null.\n"
+            "- Return ONLY a JSON array of discrepancy objects.\n\n"
+            "OUTPUT SCHEMA:\n"
+            "Array of objects, each with:\n"
+            "- field: string (e.g., 'entities[0].nome')\n"
+            "- category: string (VALUE_MISMATCH, MISSING_FIELD, or UNMATCHED_ENTITY)\n"
+            "- message: string (description of the error)\n"
+            "- expected: string (the value from ground truth)\n"
+            "- found_in_text: string or null (the EXACT literal substring from the raw draft text that caused the mismatch)\n"
+        )
+
+        content = f"GROUND_TRUTH:\n{json.dumps(ground_truth, ensure_ascii=False)}\n\nDRAFT_TEXT:\n{draft_text}"
+
+        @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
+        def _generate():
+            with _semaphore:
+                return client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt, content],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0
+                    )
+                )
+
+        try:
+            response = _generate()
+            if not response.text:
+                raise ValueError("Empty response received from Vertex AI.")
+
+            raw_text = response.text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+
+            raw_text = raw_text.strip()
+            return json.loads(raw_text)
+        except Exception as e:
+            logger.error(f"Error in audit_draft: {e}", exc_info=True)
+            return []

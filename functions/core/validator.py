@@ -1,8 +1,10 @@
 import re
 import unicodedata
-import difflib
-from typing import Dict, Any, List, Union
+import logging
+from typing import Dict, Any, List
 from dataclasses import dataclass, asdict
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Discrepancy:
@@ -11,6 +13,7 @@ class Discrepancy:
     message: str
     expected: str
     found: str
+    found_in_text: str = ""
 
     def __post_init__(self):
         def _coerce_to_string(val: Any) -> str:
@@ -26,22 +29,10 @@ class Discrepancy:
 
         self.expected = _coerce_to_string(self.expected)
         self.found = _coerce_to_string(self.found)
-
-def calculate_entity_similarity(gt_cpf: str, gt_nome: str, d_cpf: str, d_nome: str) -> float:
-    """Calculate a weighted similarity score between two entities."""
-    score = 0.0
-    if gt_cpf and d_cpf:
-        cpf_score = difflib.SequenceMatcher(None, gt_cpf, d_cpf).ratio()
-        if gt_nome and d_nome:
-            name_score = difflib.SequenceMatcher(None, gt_nome, d_nome).ratio()
-            # Weight CPF heavily
-            score = cpf_score * 0.7 + name_score * 0.3
+        if self.found_in_text is None:
+            self.found_in_text = ""
         else:
-            score = cpf_score
-    elif gt_nome and d_nome:
-        score = difflib.SequenceMatcher(None, gt_nome, d_nome).ratio()
-    return score
-
+            self.found_in_text = str(self.found_in_text)
 
 def normalize_digits(text: str) -> str:
     """Strip all non-numeric characters (keeps X/x for RG)."""
@@ -49,15 +40,24 @@ def normalize_digits(text: str) -> str:
         text = str(text)
     return re.sub(r'[^0-9X]', '', text.upper())
 
-STATE_MAPPING = {
-    "ACRE": "AC", "ALAGOAS": "AL", "AMAPA": "AP", "AMAZONAS": "AM", "BAHIA": "BA",
-    "CEARA": "CE", "DISTRITO FEDERAL": "DF", "ESPIRITO SANTO": "ES", "GOIAS": "GO",
-    "MARANHAO": "MA", "MATO GROSSO": "MT", "MATO GROSSO DO SUL": "MS", "MINAS GERAIS": "MG",
-    "PARA": "PA", "PARAIBA": "PB", "PARANA": "PR", "PERNAMBUCO": "PE", "PIAUI": "PI",
-    "RIO DE JANEIRO": "RJ", "RIO GRANDE DO NORTE": "RN", "RIO GRANDE DO SUL": "RS",
-    "RONDONIA": "RO", "RORAIMA": "RR", "SANTA CATARINA": "SC", "SAO PAULO": "SP",
-    "SERGIPE": "SE", "TOCANTINS": "TO"
-}
+def normalize_string(text: str) -> str:
+    """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
+    if not isinstance(text, str):
+        text = str(text)
+    text = text.upper()
+
+    # Strip gender suffixes like (A) or (O/A)
+    text = re.sub(r'\([AO](/[AO])?\)', '', text)
+
+    # Strip trailing state slashes (e.g., JOAO PESSOA/PB -> JOAO PESSOA)
+    text = re.sub(r'/[A-Z]{2}$', '', text)
+
+    # Strip accents
+    text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
 
 def normalize_date(text: str) -> str:
     """Attempt to parse various date formats into YYYY-MM-DD."""
@@ -96,77 +96,13 @@ def normalize_list_or_string(item: Any) -> List[str]:
     normalized_items.sort()
     return normalized_items
 
-def normalize_string(text: str) -> str:
-    """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
-    if not isinstance(text, str):
-        text = str(text)
-    text = text.upper()
-
-    # Strip gender suffixes like (A) or (O/A)
-    text = re.sub(r'\([AO](/[AO])?\)', '', text)
-
-    # Strip trailing state slashes (e.g., JOAO PESSOA/PB -> JOAO PESSOA)
-    text = re.sub(r'/[A-Z]{2}$', '', text)
-
-    # Strip accents
-    text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
-    # Remove extra spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # Map full state names to acronyms
-    if text in STATE_MAPPING:
-        text = STATE_MAPPING[text]
-
-    return text
-
-
-CORE_IDENTITY_FIELDS = {
-    "nome",
-    "cpf",
-    "rg",
-    "data_nascimento",
-    "estado_civil",
-    "filiacao",
-    "filiacao_mae",
-    "filiacao_pai",
-    "nome_mae",
-    "nome_pai",
-    "naturalidade",
-    "nacionalidade",
-    "cidade_expedicao",
-    "estado_expedicao",
-    "cpf_requerente",
-    "nome_requerente",
-    "conjuge",
-    "nome_conjuge"
-}
-
-# Keys to strictly exclude (notary metadata, fees, footers)
-NOTARY_METADATA_KEYS = {
-    "emolumentos", "emolumento", "selo_digital", "selo", "cartorio_endereco",
-    "nome_escrevente", "escrevente", "data_emissao", "cartorio", "endereco",
-    "livro", "folha", "termo", "matricula", "averbacao", "anotacao",
-    "observacao", "observacoes", "rodape", "assinatura"
-}
-
 class DocumentValidator:
     """
     Deterministically cross-checks structured ground truth data against a typed text string
-    using a hybrid approach:
-      1. Extract structured data from `typed_text` via LLM into a JSON matching `ground_truth`.
-      2. Deterministically compare the extracted JSON to the `ground_truth` using pure Python.
+    using a single-pass LLM-as-a-Judge approach.
     """
     def __init__(self, ground_truth: Dict[str, Any], typed_text: str):
         self.ground_truth = ground_truth.copy()
-
-        if "document_metadata" in self.ground_truth and isinstance(self.ground_truth["document_metadata"], dict):
-            filtered_metadata = {}
-            for key, value in self.ground_truth["document_metadata"].items():
-                key_lower = key.lower()
-                if not any(meta_key in key_lower for meta_key in NOTARY_METADATA_KEYS):
-                    filtered_metadata[key] = value
-            self.ground_truth["document_metadata"] = filtered_metadata
-
         self.typed_text = typed_text
         self.errors = []
         self._extractor_instance = None
@@ -174,196 +110,53 @@ class DocumentValidator:
     def validate(self) -> List[Dict[str, str]]:
         self.errors = []
 
-        # 1. Extract draft data using LLM
         from core.extractor import DocumentExtractor
         if self._extractor_instance is None:
             self._extractor_instance = DocumentExtractor()
 
-        draft_json = self._extractor_instance.extract_from_text(self.typed_text)
+        raw_discrepancies = self._extractor_instance.audit_draft(self.ground_truth, self.typed_text)
 
-        # 2. Deterministic validation
+        # Deterministic Hallucination Filter
+        validated_discrepancies = []
+        for d in raw_discrepancies:
+            try:
+                error = Discrepancy(
+                    field=d.get("field", "unknown"),
+                    category=d.get("category", "UNKNOWN"),
+                    message=d.get("message", ""),
+                    expected=d.get("expected", ""),
+                    found=d.get("found", d.get("found_in_text", "")),
+                    found_in_text=d.get("found_in_text")
+                )
+            except Exception as e:
+                logger.error(f"Error parsing discrepancy: {d} - {e}")
+                continue
 
-        # Validate metadata if present
-        # In the "Extract, Map, & Judge" architecture, we intentionally DO NOT compare document_metadata
-        # between the Identity Source (e.g., CNH) and the Draft (e.g., Procuração), as this causes false positives.
-        # We only care about matching and validating entities.
-        # if "document_metadata" in self.ground_truth:
-        #      draft_metadata = draft_json.get("document_metadata", {})
-        #      self._validate_node("document_metadata", self.ground_truth["document_metadata"], draft_metadata)
-
-        # Validate entities if present
-        if "entities" in self.ground_truth and isinstance(self.ground_truth["entities"], list):
-            draft_entities = draft_json.get("entities", [])
-            if not isinstance(draft_entities, list):
-                draft_entities = []
-
-            # Match entities using a Greedy Assignment Algorithm
-            used_draft_indices = set()
-            for i, gt_entity in enumerate(self.ground_truth["entities"]):
-                best_match_entity = None
-                best_match_index = -1
-                best_score = -1.0
-
-                gt_cpf = normalize_digits(str(gt_entity.get("cpf", "")))
-                if not gt_cpf: # Try alternative keys for CPF
-                    gt_cpf = normalize_digits(str(gt_entity.get("cpf_requerente", "")))
-
-                gt_nome = normalize_string(str(gt_entity.get("nome", "")))
-                if not gt_nome: # Try alternative keys for Nome
-                    gt_nome = normalize_string(str(gt_entity.get("nome_requerente", "")))
-                    if not gt_nome:
-                        gt_nome = normalize_string(str(gt_entity.get("nome_vendedor_1", ""))) # Just examples
-
-                for j, d_entity in enumerate(draft_entities):
-                    if j in used_draft_indices:
-                        continue
-
-                    d_cpf = normalize_digits(str(d_entity.get("cpf", "")))
-                    if not d_cpf:
-                         d_cpf = normalize_digits(str(d_entity.get("cpf_requerente", "")))
-
-                    d_nome = normalize_string(str(d_entity.get("nome", "")))
-                    if not d_nome:
-                         d_nome = normalize_string(str(d_entity.get("nome_requerente", "")))
-
-                    score = calculate_entity_similarity(gt_cpf, gt_nome, d_cpf, d_nome)
-                    if score > best_score:
-                        best_score = score
-                        best_match_entity = d_entity
-                        best_match_index = j
-
-                if best_match_entity and best_score >= 0.75:
-                    used_draft_indices.add(best_match_index)
-                    self._validate_node(f"entities[{i}]", gt_entity, best_match_entity)
+            if error.category == "VALUE_MISMATCH":
+                # Deterministic anchor check
+                if error.found_in_text and error.found_in_text in self.typed_text:
+                    validated_discrepancies.append(error)
                 else:
-                    self.errors.append(Discrepancy(
-                        field= f"entities[{i}]",
-                        category= "UNMATCHED_ENTITY",
-                        message= f"Entidade não encontrada no texto (esperado CPF: {gt_cpf} ou Nome: {gt_nome}).",
-                        expected= gt_nome if gt_nome else (gt_cpf if gt_cpf else "[Não esperado]"),
-                        found= "[Não encontrado no rascunho]"
-                    ))
-
-        # For backward compatibility / flat schema support
-        for key, value in self.ground_truth.items():
-            if key not in ["document_metadata", "entities"]:
-                self._validate_node(key, value, draft_json.get(key))
-
-        return [asdict(e) for e in self.errors]
-
-    def _validate_node(self, path: str, expected_node: Any, found_node: Any) -> None:
-        def format_val(val: Any) -> str:
-            if val is None:
-                return ""
-            if isinstance(val, list):
-                return ", ".join([str(v) for v in val])
-            return str(val)
-
-        expected_str_raw = format_val(expected_node)
-        found_str_raw = format_val(found_node)
-
-        if isinstance(expected_node, dict):
-            if not isinstance(found_node, dict):
-                # Ensure we don't leak full stringified dicts to the frontend
-                clean_expected = expected_node.get("nome") or expected_node.get("cpf") or "[Objeto]"
-                clean_found = found_node if isinstance(found_node, str) else "[Não encontrado ou tipo incorreto]"
-                self.errors.append(Discrepancy(
-                    field= path if path else "root",
-                    category= "VALUE_MISMATCH",
-                    message= f"O campo '{path}' deveria ser um objeto (dicionário), mas não é.",
-                    expected= str(clean_expected),
-                    found= str(clean_found)
-                ))
-                return
-            for key, expected_val in expected_node.items():
-                # CORE_IDENTITY_FIELDS Check
-                # Skip validation for non-core fields during entity comparisons to prevent false positives on roles and metadata
-                if 'entities' in path and key not in CORE_IDENTITY_FIELDS:
+                    logger.warning(f"Hallucination filtered: '{error.found_in_text}' not in raw text.")
                     continue
 
-                current_path = f"{path}.{key}" if path else key
-                found_val = found_node.get(key)
-                self._validate_node(current_path, expected_val, found_val)
-        else:
-            # Leaf node processing
-            if expected_node is None or (isinstance(expected_node, str) and not expected_node.strip()):
-                return
+            elif error.category == "MISSING_FIELD":
+                # Reverse-hallucination check
+                # Check if the expected value is actually in the text
+                # We normalize both to prevent case/accent mismatches from bypassing the filter
+                if error.expected:
+                    norm_expected = normalize_string(str(error.expected))
+                    norm_text = normalize_string(self.typed_text)
+                    if norm_expected and norm_expected in norm_text:
+                        logger.warning(f"Hallucination filtered: MISSING_FIELD for '{error.expected}', but found in text.")
+                        continue
+                validated_discrepancies.append(error)
 
-            leaf_key = path.split('.')[-1]
+            elif error.category == "UNMATCHED_ENTITY":
+                validated_discrepancies.append(error)
 
-            if leaf_key not in CORE_IDENTITY_FIELDS and 'entities' in path:
-                return
-
-            if found_node is None:
-                if leaf_key in CORE_IDENTITY_FIELDS:
-                    self.errors.append(Discrepancy(
-                        field= path,
-                        category= "MISSING_FIELD",
-                        message= f"O campo '{path}' não foi encontrado no texto.",
-                        expected= expected_str_raw,
-                        found= ""
-                    ))
-                return
-
-            if leaf_key in ["cpf", "rg"]:
-                norm_expected = normalize_digits(str(expected_node))
-                norm_found = normalize_digits(str(found_node))
-                if norm_expected != norm_found:
-                    self.errors.append(Discrepancy(
-                        field= path,
-                        category= "VALUE_MISMATCH",
-                        message= f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
-                        expected= expected_str_raw,
-                        found= found_str_raw
-                    ))
-            elif "data" in leaf_key.lower():
-                norm_expected = normalize_date(str(expected_node))
-                norm_found = normalize_date(str(found_node))
-                if norm_expected != norm_found:
-                    self.errors.append(Discrepancy(
-                        field= path,
-                        category= "VALUE_MISMATCH",
-                        message= f"O campo '{path}' não confere. Esperado: {norm_expected}, Encontrado: {norm_found}",
-                        expected= expected_str_raw,
-                        found= found_str_raw
-                    ))
-            elif isinstance(expected_node, list) or isinstance(found_node, list) or "filia" in leaf_key.lower() or "nome" in leaf_key.lower():
-                # For fields that might be lists (filiation, names sometimes extracted as lists of words)
-                norm_expected_list = normalize_list_or_string(expected_node)
-                norm_found_list = normalize_list_or_string(found_node)
-
-                # Further check if they are identical lists
-                if norm_expected_list != norm_found_list:
-                    # If dealing with lists of single elements, maybe try simple string check as fallback
-                    if len(norm_expected_list) == 1 and len(norm_found_list) == 1:
-                        if norm_expected_list[0] != norm_found_list[0]:
-                             self.errors.append(Discrepancy(
-                                field= path,
-                                category= "VALUE_MISMATCH",
-                                message= f"O campo '{path}' não confere. Esperado: '{norm_expected_list[0]}', Encontrado: '{norm_found_list[0]}'",
-                                expected= expected_str_raw,
-                                found= found_str_raw
-                            ))
-                    else:
-                        expected_str = ", ".join(norm_expected_list)
-                        found_str = ", ".join(norm_found_list)
-                        if expected_str != found_str:
-                            self.errors.append(Discrepancy(
-                                field= path,
-                                category= "VALUE_MISMATCH",
-                                message= f"O campo '{path}' não confere. Esperado: [{expected_str}], Encontrado: [{found_str}]",
-                                expected= expected_str_raw,
-                                found= found_str_raw
-                            ))
             else:
-                # General Check for all other fields
-                norm_expected_val = normalize_string(str(expected_node))
-                norm_found_val = normalize_string(str(found_node))
-                if norm_expected_val != norm_found_val:
-                    self.errors.append(Discrepancy(
-                        field= path,
-                        category= "VALUE_MISMATCH",
-                        message= f"O campo '{path}' não confere. Esperado: '{norm_expected_val}', Encontrado: '{norm_found_val}'",
-                        expected= expected_str_raw,
-                        found= found_str_raw
-                    ))
+                validated_discrepancies.append(error)
+
+        self.errors = validated_discrepancies
+        return [asdict(e) for e in self.errors]
