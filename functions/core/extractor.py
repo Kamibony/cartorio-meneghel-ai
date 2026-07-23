@@ -78,7 +78,8 @@ class DocumentExtractor:
                     model="gemini-2.5-flash",
                     contents=[file_part, prompt],
                     config=types.GenerateContentConfig(
-                        response_mime_type="application/json"
+                        response_mime_type="application/json",
+                        temperature=0.0
                     )
                 )
 
