@@ -270,12 +270,12 @@ def log_audit_event(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
-def correct_document_text(req: https_fn.Request) -> https_fn.Response:
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def log_hitl_resolution(req: https_fn.Request) -> https_fn.Response:
     """
-    Applies semantic corrections to typed text based on validation errors, and performs a verification loop.
+    Logs an audit event for a Human-in-the-Loop discrepancy resolution.
     Accepts POST requests with JSON payload:
-    {"ground_truth": {...}, "typed_text": "...", "validation_errors": [...]}
+    {"document_id": "...", "field": "...", "expected": "...", "found": "...", "resolution_type": "..."}
     """
     if req.method != "POST":
         return https_fn.Response(
@@ -293,64 +293,52 @@ def correct_document_text(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
-        ground_truth = data.get("ground_truth", {})
-        typed_text = data.get("typed_text", "")
-        validation_errors = data.get("validation_errors", [])
+        document_id = data.get("document_id")
+        field = data.get("field")
+        expected = data.get("expected")
+        found = data.get("found")
+        resolution_type = data.get("resolution_type")
 
-        if not isinstance(ground_truth, dict) or not isinstance(typed_text, str) or not isinstance(validation_errors, list):
+        if not document_id or not isinstance(document_id, str):
             return https_fn.Response(
-                json.dumps({"error": "Invalid payload types. Expected dict for ground_truth, string for typed_text, and list for validation_errors"}),
+                json.dumps({"error": "Missing or invalid document_id"}),
                 status=400,
                 content_type="application/json"
             )
 
+        if not resolution_type or not isinstance(resolution_type, str):
+            return https_fn.Response(
+                json.dumps({"error": "Missing or invalid resolution_type"}),
+                status=400,
+                content_type="application/json"
+            )
 
+        event_data = {
+            "event_type": "hitl_resolution",
+            "document_id": document_id,
+            "field": field,
+            "expected": expected,
+            "found": found,
+            "resolution_type": resolution_type,
+            "project_id": os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        }
 
-        from core.corrector import DocumentCorrector
-        from core.validator import DocumentValidator
-
-        # 1. Apply semantic correction using AI
-        corrector = DocumentCorrector()
-        corrected_text = corrector.correct_text(ground_truth=ground_truth)
-
-        # 2. Mathematical verification loop
-        # Run the corrected text back through the validator
-        validator = DocumentValidator(ground_truth, corrected_text)
-        verification_errors = validator.validate()
-
-        # Check if the specifically targeted fields still have errors
-        correction_successful = True
-        targeted_fields = {error.get("field") for error in validation_errors if error.get("field")}
-
-        for v_error in verification_errors:
-            if v_error.get("field") in targeted_fields:
-                correction_successful = False
-                break
+        # Asynchronously log the event to Firestore
+        from core.audit import log_audit_event_async
+        log_audit_event_async(event_data)
 
         return https_fn.Response(
-            json.dumps({
-                "status": "success",
-                "corrected_text": corrected_text,
-                "correction_successful": correction_successful,
-                "verification_errors": verification_errors
-            }),
+            json.dumps({"status": "success", "message": "HitL resolution event logged successfully"}),
             status=200,
             content_type="application/json"
         )
 
     except Exception as e:
-        logger.error("Error in correct_document_text", exc_info=True)
-        status_code = 500
-        error_code = "INTERNAL_ERROR"
-        if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
-            status_code = 429
-            error_code = "RESOURCE_EXHAUSTED"
+        logger.error("Error in log_hitl_resolution", exc_info=True)
         return https_fn.Response(
             json.dumps({
-                "error": f"Internal server error: {str(e)}",
-                "code": error_code,
-                "traceback": traceback.format_exc()
+                "error": f"Internal server error: {str(e)}"
             }),
-            status=status_code,
+            status=500,
             content_type="application/json"
         )

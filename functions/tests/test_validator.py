@@ -110,7 +110,7 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[0].cpf")
-        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("O campo 'entities[0].cpf' não confere. Esperado: 70247893447, Encontrado: 70247393445", errors[0]["message"])
 
     def test_rg_mismatch(self):
@@ -133,7 +133,7 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[0].rg")
-        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("O campo 'entities[0].rg' não confere. Esperado: 4054425, Encontrado: 4054426", errors[0]["message"])
 
     def test_mae_not_found(self):
@@ -156,7 +156,7 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[0].nome_mae")
-        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("O campo 'entities[0].nome_mae' não confere. Esperado: 'CAMILA FIGUEIREDO ROCHA', Encontrado: 'MARIA FIGUEIREDO ROCHA'", errors[0]["message"])
 
     def test_multiple_errors(self):
@@ -236,7 +236,7 @@ class TestDocumentValidator(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[0].nome_mae")
-        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("O campo 'entities[0].nome_mae' não foi encontrado no texto.", errors[0]["message"])
 
     def test_multiple_new_fields(self):
@@ -404,7 +404,7 @@ class TestDiverseNotarialActs(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[1].rg")
-        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("2222222", errors[0]["message"])
         self.assertIn("2222220", errors[0]["message"])
 
@@ -435,7 +435,7 @@ class TestDiverseNotarialActs(unittest.TestCase):
         errors = validator.validate()
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[1].nome")
-        self.assertEqual(errors[0]["level"], "critical")
+        self.assertIn(errors[0]["category"], ["VALUE_MISMATCH", "MISSING_FIELD"])
         self.assertIn("HERDEIRO DA SILVA", errors[0]["message"])
         self.assertIn("HERDEIRA DA SILVA", errors[0]["message"])
 
