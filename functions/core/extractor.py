@@ -128,6 +128,88 @@ class DocumentExtractor:
 
             raw_text = response.text.strip()
 
+            try:
+                data = json.loads(raw_text)
+                if "entities" in data and isinstance(data["entities"], list):
+                    data["entities"] = deduplicate_entities(data["entities"])
+                return data
+            except json.JSONDecodeError as je:
+                raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
+        except Exception as e:
+            logger.error(f"Error extracting document data: {e}", exc_info=True)
+            tb_str = traceback.format_exc()
+            raise Exception(f"Extraction failed: {str(e)}\nTraceback: {tb_str}") from e
+
+    def extract_batch(self, gcs_uris: list[str]) -> Dict[str, Any]:
+        """
+        Extracts data autonomously from a batch of documents using Vertex AI Gemini model.
+        Cross-references entities across all files to build a single, unified list of Master Entities.
+
+        Args:
+            gcs_uris (list[str]): A list of GCS URIs of the documents for a single session.
+
+        Returns:
+            Dict[str, Any]: The unified extracted structured data with a single 'entities' array.
+        """
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
+
+        contents = []
+
+        # Iterate through the list of URIs and resolve mime_type for each
+        for uri in gcs_uris:
+            mime_type = "application/pdf"
+            if uri.lower().endswith(".jpg") or uri.lower().endswith(".jpeg"):
+                mime_type = "image/jpeg"
+            elif uri.lower().endswith(".png"):
+                mime_type = "image/png"
+            elif uri.lower().endswith(".doc") or uri.lower().endswith(".docx"):
+                mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if uri.lower().endswith(".docx") else "application/msword"
+
+            file_part = types.Part.from_uri(file_uri=uri, mime_type=mime_type)
+            contents.append(file_part)
+
+        prompt = (
+            "Analyze this batch of identity documents belonging to the same legal session. "
+            "Extract a pure 'Identity Profile' for all entities found. "
+            "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
+            "Place the data into a single 'entities' array. "
+            "If a field is not explicitly present in the document, set its value to null. Do not infer, force, or duplicate values for missing fields. "
+            "Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
+            "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. "
+            "NEVER create standalone entities for parents. "
+            "COMPLETELY DISCARD the 'document type' or any 'role' (e.g., ignore 'Titular'). Treat the documents purely as a database of personal facts. "
+            "CRITICAL: You are receiving a batch of documents. If the same person appears across multiple documents (e.g., an ID and a Marriage Certificate), "
+            "you must consolidate them into ONE Master Entity containing all gathered data points (CPF, RG, spouse, etc.). Do not duplicate the individual. "
+            "Return the data strictly as a valid JSON object with a top-level key 'entities'. "
+            "Translate all keys and values into Brazilian Portuguese (pt-BR). "
+            "Do not include markdown blocks or any other text outside the JSON."
+        )
+
+        contents.append(prompt)
+
+        @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
+        def _generate():
+            with _semaphore:
+                return client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0
+                    )
+                )
+
+        try:
+            response = _generate()
+
+            if not response.text:
+                raise ValueError("Empty response received from Vertex AI.")
+
+            raw_text = response.text.strip()
+
             # Robust JSON parsing
             if raw_text.startswith("```json"):
                 raw_text = raw_text[7:]
@@ -146,7 +228,7 @@ class DocumentExtractor:
             except json.JSONDecodeError as je:
                 raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
         except Exception as e:
-            logger.error(f"Error extracting document data: {e}", exc_info=True)
+            logger.error(f"Error extracting batch document data: {e}", exc_info=True)
             tb_str = traceback.format_exc()
             raise Exception(f"Extraction failed: {str(e)}\nTraceback: {tb_str}") from e
 

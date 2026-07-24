@@ -12,6 +12,74 @@ global_cors = options.CorsOptions(cors_origins="*", cors_methods=["get", "post",
 
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
+def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
+    """
+    Extracts structured data autonomously from a batch of documents stored in GCS.
+    Accepts POST requests with JSON payload: {"gcs_uris": ["gs://...", "gs://..."]}
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    try:
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing JSON payload"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        gcs_uris = data.get("gcs_uris")
+
+        if not gcs_uris or not isinstance(gcs_uris, list):
+            return https_fn.Response(
+                json.dumps({"error": "Missing or invalid gcs_uris (must be a list)"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        from core.extractor import DocumentExtractor
+        extractor = DocumentExtractor()
+        extracted_data = extractor.extract_batch(gcs_uris)
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "data": extracted_data}),
+            status=200,
+            content_type="application/json"
+        )
+    except ValueError as e:
+        logger.error("ValueError in extract_batch_document_data", exc_info=True)
+        return https_fn.Response(
+            json.dumps({
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }),
+            status=400,
+            content_type="application/json"
+        )
+    except Exception as e:
+        logger.error("Error in extract_batch_document_data", exc_info=True)
+        status_code = 500
+        error_code = "INTERNAL_ERROR"
+        if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
+            status_code = 429
+            error_code = "RESOURCE_EXHAUSTED"
+        return https_fn.Response(
+            json.dumps({
+                "error": f"Internal server error: {str(e)}",
+                "code": error_code,
+                "traceback": traceback.format_exc()
+            }),
+            status=status_code,
+            content_type="application/json"
+        )
+
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data from a document stored in GCS.
