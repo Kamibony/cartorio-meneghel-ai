@@ -12,38 +12,77 @@ _semaphore = threading.Semaphore(3)
 
 def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
     """
-    Deterministically deduplicates entities by matching CPF.
-    Later occurrences override earlier attributes if they contain non-empty data.
+    Deterministically deduplicates and merges entities across documents.
+    Matches by CPF first, falling back to Normalized Name + Filiacao Mae.
+    Enforces the Universal Legal Hierarchy Rule: 'Certidão' data strictly overwrites others.
     """
-    from core.validator import normalize_digits
+    from core.validator import normalize_digits, normalize_string
 
-    # Using a dict to preserve ordering and merge by key
-    merged_entities_by_cpf = {}
+    merged_entities = {}
     unmerged = []
 
+    def get_merge_key(ent):
+        cpf_raw = ent.get("cpf")
+        cpf_norm = normalize_digits(cpf_raw) if cpf_raw else ""
+        if cpf_norm:
+            return f"cpf:{cpf_norm}"
+
+        # Fallback to name + mother's name
+        nome_raw = ent.get("nome")
+        mae_raw = ent.get("filiacao_mae")
+
+        if nome_raw and mae_raw:
+            nome_norm = normalize_string(nome_raw)
+            mae_norm = normalize_string(mae_raw)
+            return f"nome:{nome_norm}|mae:{mae_norm}"
+
+        return None
+
+    def is_certidao(doc_type_str):
+        return doc_type_str and "certid" in str(doc_type_str).lower()
+
     for entity in entities:
-        cpf_raw = entity.get("cpf")
+        merge_key = get_merge_key(entity)
 
-        # If no CPF, we can't reliably merge it right now, just append it
-        if not cpf_raw:
+        if not merge_key:
             unmerged.append(entity)
             continue
 
-        cpf_norm = normalize_digits(cpf_raw)
-        if not cpf_norm:
-            unmerged.append(entity)
-            continue
+        if merge_key not in merged_entities:
+            # We must create a copy so we don't accidentally mutate the original and mix types
+            merged_entities[merge_key] = dict(entity)
+        else:
+            existing = merged_entities[merge_key]
 
-        if cpf_norm in merged_entities_by_cpf:
-            existing = merged_entities_by_cpf[cpf_norm]
-            # Merge fields, newer entity takes precedence for non-empty values
+            # Universal Legal Hierarchy Rule Check
+            incoming_is_cert = is_certidao(entity.get("_source_document_type", ""))
+            existing_is_cert = is_certidao(existing.get("_source_document_type", ""))
+
+            # If the incoming document is a Certidão and the existing is NOT,
+            # the Certidão's fields unconditionally overwrite conflicting fields.
+            force_overwrite = incoming_is_cert and not existing_is_cert
+
+            # If the existing document is a Certidão and the incoming is NOT,
+            # the Certidão's fields cannot be overwritten by the incoming.
+            protect_existing = existing_is_cert and not incoming_is_cert
+
             for k, v in entity.items():
                 if v not in (None, ""):
-                    existing[k] = v
-        else:
-            merged_entities_by_cpf[cpf_norm] = entity
+                    if force_overwrite:
+                        existing[k] = v
+                    elif protect_existing:
+                        if existing.get(k) in (None, ""):
+                            # Only fill it in if the Certidao was missing it entirely
+                            existing[k] = v
+                    else:
+                        # Standard merge: newer non-empty value takes precedence
+                        existing[k] = v
 
-    return list(merged_entities_by_cpf.values()) + unmerged
+            # Keep the Certidao tag alive if it ever got applied, to protect future merges
+            if incoming_is_cert:
+                existing["_source_document_type"] = "Certidao (Merged)"
+
+    return list(merged_entities.values()) + unmerged
 
 
 class DocumentExtractor:
@@ -97,6 +136,7 @@ class DocumentExtractor:
             prompt = (
                 "Analyze this identity document (e.g., CNH, RG, Certidão). Extract a pure 'Identity Profile'. "
                 "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
+                "Also extract a top-level 'document_type' string indicating the type of the source document (e.g., 'Certidão de Casamento', 'RG', 'CNH'). "
                 "Place the data into an 'entities' array. "
                 "If a field is not explicitly present in the document, set its value to null. Do not infer, force, or duplicate values for missing fields. "
                 "Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
@@ -143,8 +183,8 @@ class DocumentExtractor:
 
     def extract_batch(self, gcs_uris: list[str]) -> Dict[str, Any]:
         """
-        Extracts data autonomously from a batch of documents using Vertex AI Gemini model.
-        Cross-references entities across all files to build a single, unified list of Master Entities.
+        Extracts data from a batch of documents by iterating over each file atomically,
+        then merges the extracted entities deterministically using Python code.
 
         Args:
             gcs_uris (list[str]): A list of GCS URIs of the documents for a single session.
@@ -152,103 +192,33 @@ class DocumentExtractor:
         Returns:
             Dict[str, Any]: The unified extracted structured data with a single 'entities' array.
         """
-        from google import genai
-        from google.genai import types
+        all_entities = []
 
-        client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
-
-        contents = []
-
-        # Iterate through the list of URIs and resolve mime_type for each
         for uri in gcs_uris:
-            mime_type = "application/pdf"
-            if uri.lower().endswith(".jpg") or uri.lower().endswith(".jpeg"):
-                mime_type = "image/jpeg"
-            elif uri.lower().endswith(".png"):
-                mime_type = "image/png"
-            elif uri.lower().endswith(".doc") or uri.lower().endswith(".docx"):
-                mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if uri.lower().endswith(".docx") else "application/msword"
-
-            file_part = types.Part.from_uri(file_uri=uri, mime_type=mime_type)
-            contents.append(file_part)
-
-        prompt = (
-            "<TASK>\n"
-            "Analyze this batch of identity documents belonging to the same legal session. "
-            "Extract a pure 'Identity Profile' for all entities found. "
-            "Treat the documents purely as a database of personal facts.\n"
-            "</TASK>\n\n"
-            "<BUSINESS_RULES>\n"
-            "- Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
-            "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object.\n"
-            "- CONSOLIDATION RULE: You are receiving a batch of documents. If the same person appears across multiple documents (e.g., an ID and a Marriage Certificate), "
-            "you must consolidate them into ONE Master Entity containing all gathered data points (CPF, RG, spouse, etc.).\n"
-            "- UNIVERSAL LEGAL HIERARCHY RULE: When extracting marital status and current name, Civil Registry Certificates (Certidões de Casamento, Nascimento, Óbito) "
-            "and their annotations (Averbações) have absolute legal precedence over identity cards (RG, CNH, CPF). The marital status and current name MUST be derived exclusively from the Certificate, superseding and ignoring any conflicting data from Identity Cards.\n"
-            "</BUSINESS_RULES>\n\n"
-            "<OUTPUT_SCHEMA>\n"
-            "- Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade).\n"
-            "- Place the data into a single 'entities' array.\n"
-            "- Ensure all extracted fields are flat strings. For example, 'naturalidade' MUST be a single string (e.g., 'João Pessoa - PB').\n"
-            "- Return the data strictly as a valid JSON object with a top-level key 'entities'.\n"
-            "- Translate all keys and values into Brazilian Portuguese (pt-BR).\n"
-            "</OUTPUT_SCHEMA>"
-        )
-
-        system_instruction = (
-            "You are a strict data extraction assistant for legal documents. "
-            "You must only extract data explicitly present in the provided documents. "
-            "If a field is not explicitly present, set its value to null. "
-            "NEVER invent, infer, force, or duplicate values for missing fields. "
-            "NEVER create standalone entities for parents. "
-            "COMPLETELY DISCARD the 'document type' or any 'role' (e.g., ignore 'Titular'). "
-            "Do not include markdown blocks or any other text outside the JSON."
-        )
-
-        contents.append(prompt)
-
-        @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
-        def _generate():
-            with _semaphore:
-                return client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0,
-                        system_instruction=system_instruction
-                    )
-                )
-
-        try:
-            response = _generate()
-
-            if not response.text:
-                raise ValueError("Empty response received from Vertex AI.")
-
-            raw_text = response.text.strip()
-
-            # Robust JSON parsing
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-
-            raw_text = raw_text.strip()
-
             try:
-                data = json.loads(raw_text)
-                if "entities" in data and isinstance(data["entities"], list):
-                    data["entities"] = deduplicate_entities(data["entities"])
-                return data
-            except json.JSONDecodeError as je:
-                raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
-        except Exception as e:
-            logger.error(f"Error extracting batch document data: {e}", exc_info=True)
-            tb_str = traceback.format_exc()
-            raise Exception(f"Extraction failed: {str(e)}\nTraceback: {tb_str}") from e
+                # Process each document atomically to avoid LLM cognitive overload
+                extracted_data = self.extract(uri)
+
+                # Tag the document type onto each entity for later merging rules
+                doc_type = extracted_data.get("document_type", "Desconhecido")
+                entities = extracted_data.get("entities", [])
+
+                for entity in entities:
+                    entity["_source_document_type"] = doc_type
+                    all_entities.append(entity)
+
+            except Exception as e:
+                logger.error(f"Error extracting batch document data for URI {uri}: {e}", exc_info=True)
+                raise
+
+        # Now deterministically merge the entities
+        merged_entities = deduplicate_entities(all_entities)
+
+        # Clean up internal tags
+        for entity in merged_entities:
+            entity.pop("_source_document_type", None)
+
+        return {"entities": merged_entities}
 
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
@@ -327,69 +297,105 @@ class DocumentExtractor:
 
     def audit_draft(self, ground_truth: Dict[str, Any], draft_text: str) -> list[Dict[str, Any]]:
         """
-        Uses LLM-as-a-Judge to directly compare ground truth against unstructured draft text.
-        Returns a list of raw discrepancies to be filtered by the validator.
+        Deterministically compares ground truth against the unstructured draft text.
+        First extracts structured data from the draft text using an LLM,
+        then performs a deterministic Python diff against the ground truth to find discrepancies.
         """
-        from google import genai
-        from google.genai import types
-
-        client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
-
-        prompt = (
-            "You are an expert legal data auditor for Brazilian Notary Offices (Cartório) evaluating legal draft documents with 100% precision.\n"
-            "You are given two inputs:\n"
-            "1. GROUND_TRUTH: A verified JSON object containing entities and their attributes.\n"
-            "2. DRAFT_TEXT: The raw, unstructured, OCR-extracted text of the draft document.\n\n"
-            "OBJECTIVE: Compare every expected attribute in the GROUND_TRUTH against the DRAFT_TEXT. "
-            "If the data in the draft contradicts the ground truth or is missing, report it as a discrepancy.\n\n"
-            "STRICT RULES:\n"
-            "- CONTEXT-AWARE AUDITING (CRITICAL): Understand the legal context of the DRAFT_TEXT first.\n"
-            "- NO CORRECTIONS: Do not fix the draft text. Only report discrepancies.\n"
-            "- EXACT SUBSTRING RULE (CRITICAL): For any VALUE_MISMATCH, you MUST extract the literal, exact substring from the DRAFT_TEXT and assign it to the 'found_in_text' field. Do not normalize, fix capitalization, or strip punctuation. If you cannot extract the exact substring, you must not report a mismatch.\n"
-            "- VALUE MATCHING: If a field from GROUND_TRUTH is present in the DRAFT_TEXT, it MUST match accurately. If it contradicts, report it as a VALUE_MISMATCH.\n"
-            "- SMART MISSING FIELDS: If a field from GROUND_TRUTH is missing in the DRAFT_TEXT, evaluate if it is a critical identity requirement for this specific type of document (e.g., Name, CPF). If it's supplementary/irrelevant data for this specific act (e.g., a marriage date in a simple Power of Attorney), silently ignore the absence instead of flagging it.\n"
-            "- NULL VALUES: If a field in GROUND_TRUTH is null, missing, or empty, never report it as a MISSING_FIELD.\n"
-            "- Return ONLY a JSON array of discrepancy objects.\n\n"
-            "OUTPUT SCHEMA:\n"
-            "Array of objects, each with:\n"
-            "- field: string (e.g., 'entities[0].nome')\n"
-            "- category: string (VALUE_MISMATCH, MISSING_FIELD, or UNMATCHED_ENTITY)\n"
-            "- message: string (description of the error)\n"
-            "- expected: string (the value from ground truth)\n"
-            "- found_in_text: string or null (the EXACT literal substring from the raw draft text that caused the mismatch)\n"
-            "- requires_human_review: boolean (set to true if you are uncertain about the discrepancy, e.g., contextual nuance or ambiguous formatting)\n"
-            "- review_reason: string or null (if requires_human_review is true, explain why human verification is needed)\n"
-        )
-
-        content = f"GROUND_TRUTH:\n{json.dumps(ground_truth, ensure_ascii=False)}\n\nDRAFT_TEXT:\n{draft_text}"
-
-        @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
-        def _generate():
-            with _semaphore:
-                return client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[prompt, content],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0
-                    )
-                )
+        import re
+        from core.validator import normalize_digits, normalize_string
 
         try:
-            response = _generate()
-            if not response.text:
-                raise ValueError("Empty response received from Vertex AI.")
+            # 1. Extract structured data from the draft text
+            draft_data = self.extract_from_text(draft_text)
+            draft_entities = draft_data.get("entities", [])
+            gt_entities = ground_truth.get("entities", [])
 
-            raw_text = response.text.strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
+            discrepancies = []
 
-            raw_text = raw_text.strip()
-            return json.loads(raw_text)
+            # Create lookup dictionaries for draft entities (by CPF, then Name)
+            draft_by_cpf = {}
+            draft_by_name = {}
+            for draft_ent in draft_entities:
+                cpf = normalize_digits(draft_ent.get("cpf", ""))
+                if cpf:
+                    draft_by_cpf[cpf] = draft_ent
+
+                nome = normalize_string(draft_ent.get("nome", ""))
+                if nome:
+                    draft_by_name[nome] = draft_ent
+
+            # 2. Deterministic Diffing
+            for i, gt_ent in enumerate(gt_entities):
+                gt_cpf = normalize_digits(gt_ent.get("cpf", ""))
+                gt_nome = normalize_string(gt_ent.get("nome", ""))
+
+                # Find matching entity in draft
+                matched_draft_ent = None
+                if gt_cpf and gt_cpf in draft_by_cpf:
+                    matched_draft_ent = draft_by_cpf[gt_cpf]
+                elif gt_nome and gt_nome in draft_by_name:
+                    matched_draft_ent = draft_by_name[gt_nome]
+
+                if not matched_draft_ent:
+                    # Entity entirely missing from draft
+                    discrepancies.append({
+                        "field": f"entities[{i}]",
+                        "category": "UNMATCHED_ENTITY",
+                        "message": f"Entity '{gt_ent.get('nome', 'Unknown')}' not found in the draft document.",
+                        "expected": gt_ent.get("nome", ""),
+                        "found_in_text": None,
+                        "requires_human_review": False
+                    })
+                    continue
+
+                # Compare fields for the matched entity
+                for key, expected_val in gt_ent.items():
+                    if key.startswith("_"):
+                        continue
+                    if expected_val in (None, ""):
+                        continue
+
+                    draft_val = matched_draft_ent.get(key)
+                    field_path = f"entities[{i}].{key}"
+
+                    if draft_val in (None, ""):
+                        discrepancies.append({
+                            "field": field_path,
+                            "category": "MISSING_FIELD",
+                            "message": f"Expected '{key}' is missing in the draft.",
+                            "expected": str(expected_val),
+                            "found_in_text": None,
+                            "requires_human_review": False
+                        })
+                    else:
+                        norm_expected = normalize_string(str(expected_val))
+                        norm_draft = normalize_string(str(draft_val))
+
+                        if norm_expected != norm_draft:
+                            # Try to extract the exact substring from the raw draft text
+                            # This is necessary because DocumentValidator downstream requires the exact literal match
+                            exact_substring = str(draft_val)
+                            try:
+                                # We search the draft text for a case-insensitive match of the drafted value
+                                escaped_val = re.escape(str(draft_val))
+                                match = re.search(escaped_val, draft_text, re.IGNORECASE)
+                                if match:
+                                    exact_substring = match.group(0)
+                            except Exception:
+                                pass
+
+                            discrepancies.append({
+                                "field": field_path,
+                                "category": "VALUE_MISMATCH",
+                                "message": f"Value mismatch for '{key}'. Expected '{expected_val}', found '{draft_val}'.",
+                                "expected": str(expected_val),
+                                "found": str(draft_val),
+                                "found_in_text": exact_substring,
+                                "requires_human_review": False
+                            })
+
+            return discrepancies
+
         except Exception as e:
-            logger.error(f"Error in audit_draft: {e}", exc_info=True)
+            logger.error(f"Error in deterministic audit_draft: {e}", exc_info=True)
             return []
