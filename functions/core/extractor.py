@@ -10,6 +10,42 @@ logger = logging.getLogger(__name__)
 
 _semaphore = threading.Semaphore(3)
 
+def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """
+    Deterministically deduplicates entities by matching CPF.
+    Later occurrences override earlier attributes if they contain non-empty data.
+    """
+    from core.validator import normalize_digits
+
+    # Using a dict to preserve ordering and merge by key
+    merged_entities_by_cpf = {}
+    unmerged = []
+
+    for entity in entities:
+        cpf_raw = entity.get("cpf")
+
+        # If no CPF, we can't reliably merge it right now, just append it
+        if not cpf_raw:
+            unmerged.append(entity)
+            continue
+
+        cpf_norm = normalize_digits(cpf_raw)
+        if not cpf_norm:
+            unmerged.append(entity)
+            continue
+
+        if cpf_norm in merged_entities_by_cpf:
+            existing = merged_entities_by_cpf[cpf_norm]
+            # Merge fields, newer entity takes precedence for non-empty values
+            for k, v in entity.items():
+                if v not in (None, ""):
+                    existing[k] = v
+        else:
+            merged_entities_by_cpf[cpf_norm] = entity
+
+    return list(merged_entities_by_cpf.values()) + unmerged
+
+
 class DocumentExtractor:
     """
     Unified extractor for all document types using Vertex AI with Gemini 2.5 Flash.
@@ -62,7 +98,6 @@ class DocumentExtractor:
                 "Analyze this identity document (e.g., CNH, RG, Certidão). Extract a pure 'Identity Profile'. "
                 "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
                 "Place the data into an 'entities' array. "
-                "If the same person appears multiple times, merge their data into a single unified entity object (deduplication). "
                 "If a field is not explicitly present in the document, set its value to null. Do not infer, force, or duplicate values for missing fields. "
                 "Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
                 "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. "
@@ -104,7 +139,10 @@ class DocumentExtractor:
             raw_text = raw_text.strip()
 
             try:
-                return json.loads(raw_text)
+                data = json.loads(raw_text)
+                if "entities" in data and isinstance(data["entities"], list):
+                    data["entities"] = deduplicate_entities(data["entities"])
+                return data
             except json.JSONDecodeError as je:
                 raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
         except Exception as e:
@@ -175,7 +213,10 @@ class DocumentExtractor:
             raw_text = raw_text.strip()
 
             try:
-                return json.loads(raw_text)
+                data = json.loads(raw_text)
+                if "entities" in data and isinstance(data["entities"], list):
+                    data["entities"] = deduplicate_entities(data["entities"])
+                return data
             except json.JSONDecodeError as je:
                 raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
         except Exception as e:
