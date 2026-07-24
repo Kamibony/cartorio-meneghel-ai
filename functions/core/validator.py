@@ -16,6 +16,7 @@ class Discrepancy:
     found_in_text: str = ""
     requires_human_review: bool = False
     review_reason: str = ""
+    entity_name: str = ""
 
     def __post_init__(self):
         def _coerce_to_string(val: Any) -> str:
@@ -125,15 +126,30 @@ class DocumentValidator:
         validated_discrepancies = []
         for d in raw_discrepancies:
             try:
+                field_path = d.get("field", "unknown")
+
+                # Extract entity name if applicable
+                entity_name_val = ""
+                if field_path.startswith("entities["):
+                    match = re.search(r"entities\[(\d+)\]", field_path)
+                    if match:
+                        idx = int(match.group(1))
+                        entities_list = self.ground_truth.get("entities", [])
+                        if 0 <= idx < len(entities_list):
+                            entity_name_val = entities_list[idx].get("nome", "")
+                            if not entity_name_val:
+                                entity_name_val = entities_list[idx].get("razao_social", "")
+
                 error = Discrepancy(
-                    field=d.get("field", "unknown"),
+                    field=field_path,
                     category=d.get("category", "UNKNOWN"),
                     message=d.get("message", ""),
                     expected=d.get("expected", ""),
                     found=d.get("found", d.get("found_in_text", "")),
                     found_in_text=d.get("found_in_text"),
                     requires_human_review=d.get("requires_human_review", False),
-                    review_reason=d.get("review_reason", "") or ""
+                    review_reason=d.get("review_reason", "") or "",
+                    entity_name=entity_name_val
                 )
             except Exception as e:
                 logger.error(f"Error parsing discrepancy: {d} - {e}")
