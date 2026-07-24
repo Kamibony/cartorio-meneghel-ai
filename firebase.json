@@ -8,6 +8,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/extract_batch_document_data",
+        "function": "extract_batch_document_data"
+      },
+      {
         "source": "/api/extract_document_data",
         "function": "extract_document_data"
       },
