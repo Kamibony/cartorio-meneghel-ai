@@ -2,10 +2,29 @@ import unittest
 from unittest.mock import patch, MagicMock
 import os
 
-from core.extractor import DocumentExtractor
+from core.extractor import DocumentExtractor, deduplicate_entities
 
 
 class TestExtractor(unittest.TestCase):
+
+    def test_deduplicate_entities(self):
+        entities = [
+            {"cpf": "123.456.789-00", "nome": "Bianca", "rg": "12345"},
+            {"cpf": "12345678900", "nome": "Bianca Dantas", "estado_civil": "CASADA"},
+            {"cpf": "000.111.222-33", "nome": "João"}
+        ]
+
+        merged = deduplicate_entities(entities)
+
+        self.assertEqual(len(merged), 2)
+
+        bianca = next(e for e in merged if e["cpf"] == "12345678900" or e["cpf"] == "123.456.789-00")
+        self.assertEqual(bianca["nome"], "Bianca Dantas")
+        self.assertEqual(bianca["rg"], "12345")
+        self.assertEqual(bianca["estado_civil"], "CASADA")
+
+        joao = next(e for e in merged if e["nome"] == "João")
+        self.assertEqual(joao["cpf"], "000.111.222-33")
 
     @patch.dict(os.environ, {"FIREBASE_PROJECT_ID": "test-project"})
     @patch('google.genai.Client')
