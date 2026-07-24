@@ -10,6 +10,8 @@ interface ValidationError {
   expected?: string;
   found?: string;
   found_in_text?: string;
+  requires_human_review?: boolean;
+  review_reason?: string;
 }
 
 interface ValidationResponse {
@@ -31,15 +33,45 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [validationErrors, setValidationErrors] = useState<ValidationError[] | null>(null);
   const [resolvedErrors, setResolvedErrors] = useState<Set<string>>(new Set());
   const [serverError, setServerError] = useState<string | null>(null);
+  const [correctedText, setCorrectedText] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'validation' | 'corrected'>('validation');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
+
+  const handleApplyCorrections = () => {
+    if (!validationErrors) return;
+
+    let textToFix = typedText;
+    if (inputType === 'upload' && cachedDraftText) {
+      textToFix = cachedDraftText.text;
+    }
+
+    let resultText = textToFix;
+
+    // Apply deterministic replacements backwards or globally?
+    // Since we have found_in_text for exact literal strings, let's just do a global replace
+    // for all unresolved VALUE_MISMATCH errors where we have found_in_text and expected.
+    validationErrors.forEach(err => {
+      if (err.category === 'VALUE_MISMATCH' && !resolvedErrors.has(err.field)) {
+        if (err.found_in_text && err.expected) {
+           // We split and join to safely replace all instances without dealing with regex escaping
+           resultText = resultText.split(err.found_in_text).join(err.expected);
+        }
+      }
+    });
+
+    setCorrectedText(resultText);
+    setViewMode('corrected');
+  };
 
   const handleValidate = async () => {
     setIsValidating(true);
     setValidationErrors(null);
     setResolvedErrors(new Set());
     setServerError(null);
+    setCorrectedText(null);
+    setViewMode('validation');
 
     let textToValidate = typedText;
 
@@ -145,7 +177,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   };
 
   return (
-    <div className="h-full bg-white border border-gray-300 rounded-lg shadow-sm flex flex-col">
+    <div className="h-full bg-white border border-gray-300 rounded-lg shadow-sm flex flex-col overflow-hidden">
       <div className="bg-gray-100 border-b border-gray-200 px-4 py-3 flex justify-between items-center">
         <h2 className="text-sm font-semibold text-gray-700">Área de Validação (Minuta)</h2>
         <div className="flex bg-white rounded-md border border-gray-300 p-0.5">
@@ -220,7 +252,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
             id="typed-text"
             value={typedText}
             onChange={(e) => setTypedText(e.target.value)}
-            className="flex-1 w-full border border-gray-300 rounded-md shadow-sm p-3 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm"
+            className="w-full h-32 border border-gray-300 rounded-md shadow-sm p-3 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm"
             placeholder="Digite ou cole o texto do documento aqui..."
             disabled={isValidating}
           />
@@ -246,9 +278,53 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           </button>
         </div>
 
-        <div className="mt-6 border-t border-gray-200 pt-4 overflow-y-auto flex-1">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Resultados da Validação</h3>
+        <div className="mt-6 border-t border-gray-200 pt-4 overflow-y-auto flex-1 flex flex-col">
+          <div className="flex justify-between items-center mb-3">
+             <div className="flex space-x-2">
+                <button
+                  onClick={() => setViewMode('validation')}
+                  className={`text-sm font-medium px-3 py-1.5 rounded-md ${viewMode === 'validation' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Validação
+                </button>
+                <button
+                  onClick={() => setViewMode('corrected')}
+                  disabled={!correctedText}
+                  className={`text-sm font-medium px-3 py-1.5 rounded-md ${viewMode === 'corrected' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'} ${!correctedText ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Minuta Corrigida
+                </button>
+             </div>
+             {validationErrors && validationErrors.length > 0 && viewMode === 'validation' && (
+                <button
+                  onClick={handleApplyCorrections}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded shadow-sm text-white bg-green-600 hover:bg-green-700"
+                >
+                  <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Aplicar Correções Seguras
+                </button>
+             )}
+          </div>
 
+          {viewMode === 'corrected' && correctedText && (
+            <div className="flex-1 flex flex-col">
+               <textarea
+                 readOnly
+                 value={correctedText}
+                 className="flex-1 w-full p-4 border border-green-300 bg-green-50 rounded-md font-mono text-sm resize-none"
+               />
+               <div className="mt-2 text-right">
+                  <button onClick={() => { navigator.clipboard.writeText(correctedText); alert('Copiado!')}} className="text-sm text-blue-600 hover:underline">
+                    Copiar Tudo
+                  </button>
+               </div>
+            </div>
+          )}
+
+          {viewMode === 'validation' && (
+            <>
           {serverError && (
             <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
               <div className="flex">
@@ -302,7 +378,12 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                       if (isResolved) return null;
 
                       return (
-                        <div key={idx} className={`border rounded-lg shadow-sm p-4 ${cardColor}`}>
+                        <div key={idx} className={`border rounded-lg shadow-sm p-4 ${cardColor} relative overflow-hidden`}>
+                          {error.requires_human_review && (
+                             <div className="absolute top-0 right-0 bg-yellow-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg shadow-sm">
+                               Revisão Humana Necessária
+                             </div>
+                          )}
                           <div className="flex justify-between items-start mb-3">
                             <div>
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeColor} mb-2`}>
@@ -314,13 +395,19 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                             </div>
                           </div>
 
-                          <p className="text-sm text-gray-600 mb-4">{error.message}</p>
+                          <p className="text-sm text-gray-600 mb-2">{error.message}</p>
+
+                          {error.requires_human_review && error.review_reason && (
+                            <p className="text-xs text-yellow-800 bg-yellow-50 border border-yellow-200 p-2 rounded mb-4">
+                               <span className="font-bold">Motivo da incerteza:</span> {error.review_reason}
+                            </p>
+                          )}
 
                           <div className="bg-gray-50 rounded p-3 text-sm grid grid-cols-2 gap-4">
                             <div>
                               <span className="block text-xs font-medium text-gray-500 mb-1">O que está na minuta:</span>
                               {error.found ? (
-                                <span className="text-red-700 font-mono break-all bg-red-50 px-1 rounded">{error.found}</span>
+                                <span className="text-red-700 font-mono break-all bg-red-50 px-2 py-1 rounded line-through decoration-red-500 decoration-2">{error.found}</span>
                               ) : (
                                 <span className="text-gray-400 italic">Não encontrado</span>
                               )}
@@ -328,7 +415,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                             <div>
                               <span className="block text-xs font-medium text-gray-500 mb-1">O que deveria ser (Documento Fonte):</span>
                               {error.expected ? (
-                                <span className="text-green-700 font-mono break-all bg-green-50 px-1 rounded">{error.expected}</span>
+                                <span className="text-green-700 font-mono break-all bg-green-50 px-2 py-1 rounded border border-green-200">{error.expected}</span>
                               ) : (
                                 <span className="text-gray-400 italic">-</span>
                               )}
@@ -372,6 +459,8 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                 </div>
               </div>
             )
+          )}
+          </>
           )}
         </div>
       </div>

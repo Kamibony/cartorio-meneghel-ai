@@ -14,6 +14,8 @@ class Discrepancy:
     expected: str
     found: str
     found_in_text: str = ""
+    requires_human_review: bool = False
+    review_reason: str = ""
 
     def __post_init__(self):
         def _coerce_to_string(val: Any) -> str:
@@ -129,7 +131,9 @@ class DocumentValidator:
                     message=d.get("message", ""),
                     expected=d.get("expected", ""),
                     found=d.get("found", d.get("found_in_text", "")),
-                    found_in_text=d.get("found_in_text")
+                    found_in_text=d.get("found_in_text"),
+                    requires_human_review=d.get("requires_human_review", False),
+                    review_reason=d.get("review_reason", "") or ""
                 )
             except Exception as e:
                 logger.error(f"Error parsing discrepancy: {d} - {e}")
