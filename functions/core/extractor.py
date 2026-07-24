@@ -173,22 +173,35 @@ class DocumentExtractor:
             contents.append(file_part)
 
         prompt = (
+            "<TASK>\n"
             "Analyze this batch of identity documents belonging to the same legal session. "
             "Extract a pure 'Identity Profile' for all entities found. "
-            "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
-            "Place the data into a single 'entities' array. "
-            "If a field is not explicitly present in the document, set its value to null. Do not infer, force, or duplicate values for missing fields. "
-            "Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
-            "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. "
+            "Treat the documents purely as a database of personal facts.\n"
+            "</TASK>\n\n"
+            "<BUSINESS_RULES>\n"
+            "- Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
+            "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object.\n"
+            "- CONSOLIDATION RULE: You are receiving a batch of documents. If the same person appears across multiple documents (e.g., an ID and a Marriage Certificate), "
+            "you must consolidate them into ONE Master Entity containing all gathered data points (CPF, RG, spouse, etc.).\n"
+            "- UNIVERSAL LEGAL HIERARCHY RULE: When extracting marital status and current name, Civil Registry Certificates (Certidões de Casamento, Nascimento, Óbito) "
+            "and their annotations (Averbações) have absolute legal precedence over identity cards (RG, CNH, CPF). The marital status and current name MUST be derived exclusively from the Certificate, superseding and ignoring any conflicting data from Identity Cards.\n"
+            "</BUSINESS_RULES>\n\n"
+            "<OUTPUT_SCHEMA>\n"
+            "- Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade).\n"
+            "- Place the data into a single 'entities' array.\n"
+            "- Ensure all extracted fields are flat strings. For example, 'naturalidade' MUST be a single string (e.g., 'João Pessoa - PB').\n"
+            "- Return the data strictly as a valid JSON object with a top-level key 'entities'.\n"
+            "- Translate all keys and values into Brazilian Portuguese (pt-BR).\n"
+            "</OUTPUT_SCHEMA>"
+        )
+
+        system_instruction = (
+            "You are a strict data extraction assistant for legal documents. "
+            "You must only extract data explicitly present in the provided documents. "
+            "If a field is not explicitly present, set its value to null. "
+            "NEVER invent, infer, force, or duplicate values for missing fields. "
             "NEVER create standalone entities for parents. "
-            "COMPLETELY DISCARD the 'document type' or any 'role' (e.g., ignore 'Titular'). Treat the documents purely as a database of personal facts. "
-            "CRITICAL: You are receiving a batch of documents. If the same person appears across multiple documents (e.g., an ID and a Marriage Certificate), "
-            "you must consolidate them into ONE Master Entity containing all gathered data points (CPF, RG, spouse, etc.). Do not duplicate the individual. "
-            "BUSINESS LOGIC/NAME EVOLUTION RULE: If a person's name changes across documents (e.g., maiden name on an ID vs. married name on a Marriage Certificate), prioritize the most recent or current legal name and consolidate them into ONE Master Entity. "
-            "When extracting marital status and current name, Civil Registry Certificates (Certidões de Casamento, Nascimento, Óbito) and their annotations (Averbações) have absolute legal precedence over identity cards (RG, CNH, CPF). STEP 1: Search the batch for any Civil Registry certificate. STEP 2: Derive the marital status ONLY from that certificate and its annotations (e.g., Casamento -> casado(a); Averbação de divórcio -> divorciado(a)), completely ignoring conflicting status strings found on IDs. "
-            "Ensure all extracted fields are flat strings. For example, 'naturalidade' MUST be a single string (e.g., 'João Pessoa - PB'), NEVER a nested object. "
-            "Return the data strictly as a valid JSON object with a top-level key 'entities'. "
-            "Translate all keys and values into Brazilian Portuguese (pt-BR). "
+            "COMPLETELY DISCARD the 'document type' or any 'role' (e.g., ignore 'Titular'). "
             "Do not include markdown blocks or any other text outside the JSON."
         )
 
@@ -202,7 +215,8 @@ class DocumentExtractor:
                     contents=contents,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.0
+                        temperature=0.0,
+                        system_instruction=system_instruction
                     )
                 )
 
