@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 global_cors = options.CorsOptions(cors_origins="*", cors_methods=["get", "post", "options"])
 
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
 def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data autonomously from a batch of documents stored in GCS.
@@ -79,7 +79,7 @@ def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
         )
 
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data from a document stored in GCS.
@@ -224,7 +224,7 @@ def api_status(req: https_fn.Request) -> https_fn.Response:
         content_type="application/json"
     )
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
 def validate_document_text(req: https_fn.Request) -> https_fn.Response:
     """
     Validates typed text against ground truth deterministically.
