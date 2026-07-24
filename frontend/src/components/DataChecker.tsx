@@ -12,6 +12,7 @@ interface ValidationError {
   found_in_text?: string;
   requires_human_review?: boolean;
   review_reason?: string;
+  entity_name?: string;
 }
 
 interface ValidationResponse {
@@ -34,7 +35,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [resolvedErrors, setResolvedErrors] = useState<Set<string>>(new Set());
   const [serverError, setServerError] = useState<string | null>(null);
   const [correctedText, setCorrectedText] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'validation' | 'corrected'>('validation');
+  const [viewMode, setViewMode] = useState<'validation' | 'visual_review' | 'corrected'>('validation');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
@@ -62,7 +63,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
     });
 
     setCorrectedText(resultText);
-    setViewMode('corrected');
+    setViewMode('visual_review');
   };
 
   const handleValidate = async () => {
@@ -288,6 +289,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                   Validação
                 </button>
                 <button
+                  onClick={() => setViewMode('visual_review')}
+                  disabled={!correctedText}
+                  className={`text-sm font-medium px-3 py-1.5 rounded-md ${viewMode === 'visual_review' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'} ${!correctedText ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Revisão Visual
+                </button>
+                <button
                   onClick={() => setViewMode('corrected')}
                   disabled={!correctedText}
                   className={`text-sm font-medium px-3 py-1.5 rounded-md ${viewMode === 'corrected' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'} ${!correctedText ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -307,6 +315,49 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                 </button>
              )}
           </div>
+
+          {viewMode === 'visual_review' && correctedText && (
+            <div className="flex-1 flex flex-col p-4 border border-gray-300 bg-white rounded-md overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed">
+              {(() => {
+                let currentText = inputType === 'upload' && cachedDraftText ? cachedDraftText.text : typedText;
+
+                const errorsToFix = (validationErrors || []).filter(err => err.category === 'VALUE_MISMATCH' && !resolvedErrors.has(err.field) && err.found_in_text && err.expected);
+
+                if (errorsToFix.length === 0) return <span>{currentText}</span>;
+
+                let elements: React.ReactNode[] = [currentText];
+
+                errorsToFix.forEach((err, idx) => {
+                   const foundText = err.found_in_text as string;
+                   const expectedText = err.expected as string;
+
+                   const newElements: React.ReactNode[] = [];
+
+                   elements.forEach((el, i) => {
+                       if (typeof el === 'string') {
+                           const parts = el.split(foundText);
+                           parts.forEach((part, pIdx) => {
+                               newElements.push(part);
+                               if (pIdx < parts.length - 1) {
+                                   newElements.push(
+                                       <span key={`edit-${idx}-${i}-${pIdx}`}>
+                                          <del className="text-red-500 bg-red-50 line-through px-1 rounded mx-0.5">{foundText}</del>
+                                          <ins className="text-green-700 bg-green-50 font-bold px-1 rounded mx-0.5 no-underline">{expectedText}</ins>
+                                       </span>
+                                   );
+                               }
+                           });
+                       } else {
+                           newElements.push(el);
+                       }
+                   });
+                   elements = newElements;
+                });
+
+                return elements;
+              })()}
+            </div>
+          )}
 
           {viewMode === 'corrected' && correctedText && (
             <div className="flex-1 flex flex-col">
@@ -390,7 +441,21 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                                 {error.category.replace('_', ' ')}
                               </span>
                               <h4 className="text-sm font-bold text-gray-900 uppercase">
-                                {error.field.replace(/^entities\[(\d+)\]\./, (_, p1) => `ENTIDADE ${parseInt(p1) + 1} - `).replace(/^document_metadata\./, 'METADADOS - ')}
+                                {(() => {
+                                  if (error.entity_name) {
+                                     const attribute = error.field.split('.').pop() || '';
+                                     return `${error.entity_name} - ${attribute}`;
+                                  }
+
+                                  const entityMatch = error.field.match(/^entities\[(\d+)\]\.(.*)/);
+                                  if (entityMatch) {
+                                    const index = parseInt(entityMatch[1]);
+                                    const attribute = entityMatch[2];
+                                    return `ENTIDADE ${index + 1} - ${attribute}`;
+                                  }
+
+                                  return error.field.replace(/^document_metadata\./, 'METADADOS - ');
+                                })()}
                               </h4>
                             </div>
                           </div>
