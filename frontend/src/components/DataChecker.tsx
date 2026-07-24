@@ -56,8 +56,11 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
     validationErrors.forEach(err => {
       if (err.category === 'VALUE_MISMATCH' && !resolvedErrors.has(err.field)) {
         if (err.found_in_text && err.expected) {
-           // We split and join to safely replace all instances without dealing with regex escaping
-           resultText = resultText.split(err.found_in_text).join(err.expected);
+           // Escape the found text for regex
+           const escapedFoundText = err.found_in_text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+           // Build a regex that matches the found text, optionally followed by punctuation, keeping the punctuation
+           const regex = new RegExp(`(${escapedFoundText})([.,;:]?)`, 'g');
+           resultText = resultText.replace(regex, `${err.expected}$2`);
         }
       }
     });
@@ -210,74 +213,78 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           </div>
         )}
 
-        {inputType === 'upload' ? (
-          <div
-            className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-md p-6 bg-gray-50 hover:bg-gray-100 cursor-pointer"
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                setDraftFile(e.dataTransfer.files[0]);
-              }
-            }}
-          >
-             <input
-              id="file-upload"
-              type="file"
-              accept=".doc,.docx,.pdf,application/msword,application/pdf"
-              ref={fileInputRef}
-              onChange={(e) => e.target.files && setDraftFile(e.target.files[0])}
-              className="hidden"
-            />
-            <div className="text-center">
-               <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                  <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-               </svg>
-               <div className="mt-4 flex text-sm text-gray-600 justify-center">
-                 <label htmlFor="file-upload" className="relative cursor-pointer font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
-                    <span>Selecione um arquivo</span>
-                 </label>
-                 <p className="pl-1">ou arraste e solte</p>
-               </div>
-               <p className="text-xs text-gray-500 mt-2">Word (DOC/DOCX) ou PDF</p>
-            </div>
-            {draftFile && (
-              <div className="mt-4 p-2 bg-blue-50 rounded border border-blue-200 text-sm text-blue-700 text-center w-full truncate">
-                Arquivo selecionado: {draftFile.name}
+        {(!validationErrors && !serverError) && (
+          <>
+            {inputType === 'upload' ? (
+              <div
+                className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-md p-6 bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    setDraftFile(e.dataTransfer.files[0]);
+                  }
+                }}
+              >
+                 <input
+                  id="file-upload"
+                  type="file"
+                  accept=".doc,.docx,.pdf,application/msword,application/pdf"
+                  ref={fileInputRef}
+                  onChange={(e) => e.target.files && setDraftFile(e.target.files[0])}
+                  className="hidden"
+                />
+                <div className="text-center">
+                   <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                   </svg>
+                   <div className="mt-4 flex text-sm text-gray-600 justify-center">
+                     <label htmlFor="file-upload" className="relative cursor-pointer font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                        <span>Selecione um arquivo</span>
+                     </label>
+                     <p className="pl-1">ou arraste e solte</p>
+                   </div>
+                   <p className="text-xs text-gray-500 mt-2">Word (DOC/DOCX) ou PDF</p>
+                </div>
+                {draftFile && (
+                  <div className="mt-4 p-2 bg-blue-50 rounded border border-blue-200 text-sm text-blue-700 text-center w-full truncate">
+                    Arquivo selecionado: {draftFile.name}
+                  </div>
+                )}
               </div>
+            ) : (
+              <textarea
+                id="typed-text"
+                value={typedText}
+                onChange={(e) => setTypedText(e.target.value)}
+                className="w-full h-32 border border-gray-300 rounded-md shadow-sm p-3 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm"
+                placeholder="Digite ou cole o texto do documento aqui..."
+                disabled={isValidating}
+              />
             )}
-          </div>
-        ) : (
-          <textarea
-            id="typed-text"
-            value={typedText}
-            onChange={(e) => setTypedText(e.target.value)}
-            className="w-full h-32 border border-gray-300 rounded-md shadow-sm p-3 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm"
-            placeholder="Digite ou cole o texto do documento aqui..."
-            disabled={isValidating}
-          />
-        )}
 
-        <div className="mt-4 flex justify-between items-center">
-          {!groundTruth && (
-            <span className="text-sm text-yellow-600 bg-yellow-50 px-2 py-1 rounded border border-yellow-200">
-              Por favor, adicione documentos fonte primeiro.
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={handleValidate}
-            disabled={isButtonDisabled}
-            className={`ml-auto inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
-              isButtonDisabled
-                ? 'bg-blue-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
-            }`}
-          >
-            {isProcessing ? 'Processando...' : 'Validar Minuta'}
-          </button>
-        </div>
+            <div className="mt-4 flex justify-between items-center">
+              {!groundTruth && (
+                <span className="text-sm text-yellow-600 bg-yellow-50 px-2 py-1 rounded border border-yellow-200">
+                  Por favor, adicione documentos fonte primeiro.
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleValidate}
+                disabled={isButtonDisabled}
+                className={`ml-auto inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
+                  isButtonDisabled
+                    ? 'bg-blue-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+                }`}
+              >
+                {isProcessing ? 'Processando...' : 'Validar Minuta'}
+              </button>
+            </div>
+          </>
+        )}
 
         <div className="mt-6 border-t border-gray-200 pt-4 overflow-y-auto flex-1 flex flex-col">
           <div className="flex justify-between items-center mb-3">
@@ -332,21 +339,25 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                    const expectedText = err.expected as string;
 
                    const newElements: React.ReactNode[] = [];
+                   const escapedFoundText = foundText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                   const regex = new RegExp(`(${escapedFoundText})([.,;:]?)`, 'g');
 
                    elements.forEach((el, i) => {
                        if (typeof el === 'string') {
-                           const parts = el.split(foundText);
-                           parts.forEach((part, pIdx) => {
-                               newElements.push(part);
-                               if (pIdx < parts.length - 1) {
-                                   newElements.push(
-                                       <span key={`edit-${idx}-${i}-${pIdx}`}>
-                                          <del className="text-red-500 bg-red-50 line-through px-1 rounded mx-0.5">{foundText}</del>
-                                          <ins className="text-green-700 bg-green-50 font-bold px-1 rounded mx-0.5 no-underline">{expectedText}</ins>
-                                       </span>
-                                   );
-                               }
-                           });
+                           let lastIndex = 0;
+                           let match;
+                           while ((match = regex.exec(el)) !== null) {
+                               newElements.push(el.slice(lastIndex, match.index));
+                               newElements.push(
+                                   <span key={`edit-${idx}-${i}-${match.index}`}>
+                                      <del className="text-red-500 bg-red-50 line-through px-1 rounded mx-0.5">{foundText}</del>
+                                      <ins className="text-green-700 bg-green-50 font-bold px-1 rounded mx-0.5 no-underline">{expectedText}</ins>
+                                      {match[2]}
+                                   </span>
+                               );
+                               lastIndex = regex.lastIndex;
+                           }
+                           newElements.push(el.slice(lastIndex));
                        } else {
                            newElements.push(el);
                        }
@@ -360,13 +371,43 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           )}
 
           {viewMode === 'corrected' && correctedText && (
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col relative h-full overflow-hidden">
+               {(() => {
+                 const missingFields = (validationErrors || []).filter(err => err.category === 'MISSING_FIELD' && !resolvedErrors.has(err.field));
+                 if (missingFields.length > 0) {
+                   return (
+                     <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-3 shadow-sm shrink-0">
+                       <div className="flex">
+                         <div className="flex-shrink-0">
+                           <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                           </svg>
+                         </div>
+                         <div className="ml-3">
+                           <h3 className="text-sm font-medium text-yellow-800">Atenção: Campos Ausentes na Minuta</h3>
+                           <div className="mt-2 text-sm text-yellow-700">
+                             <ul className="list-disc pl-5 space-y-1">
+                               {missingFields.map((err, idx) => (
+                                 <li key={idx}>
+                                   {err.entity_name ? `${err.entity_name} - ` : ''}
+                                   <strong>{err.field.split('.').pop()}</strong>: deveria conter "{err.expected}"
+                                 </li>
+                               ))}
+                             </ul>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   );
+                 }
+                 return null;
+               })()}
                <textarea
                  readOnly
                  value={correctedText}
                  className="flex-1 w-full p-4 border border-green-300 bg-green-50 rounded-md font-mono text-sm resize-none"
                />
-               <div className="mt-2 text-right">
+               <div className="mt-2 text-right shrink-0">
                   <button onClick={() => { navigator.clipboard.writeText(correctedText); alert('Copiado!')}} className="text-sm text-blue-600 hover:underline">
                     Copiar Tudo
                   </button>

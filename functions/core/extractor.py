@@ -185,6 +185,7 @@ class DocumentExtractor:
             "CRITICAL: You are receiving a batch of documents. If the same person appears across multiple documents (e.g., an ID and a Marriage Certificate), "
             "you must consolidate them into ONE Master Entity containing all gathered data points (CPF, RG, spouse, etc.). Do not duplicate the individual. "
             "BUSINESS LOGIC/NAME EVOLUTION RULE: If a person's name changes across documents (e.g., maiden name on an ID vs. married name on a Marriage Certificate), prioritize the most recent or current legal name and consolidate them into ONE Master Entity. "
+            "When extracting marital status and current name, Civil Registry Certificates (Certidões de Casamento, Nascimento, Óbito) and their annotations (Averbações) have absolute legal precedence over identity cards (RG, CNH, CPF). STEP 1: Search the batch for any Civil Registry certificate. STEP 2: Derive the marital status ONLY from that certificate and its annotations (e.g., Casamento -> casado(a); Averbação de divórcio -> divorciado(a)), completely ignoring conflicting status strings found on IDs. "
             "Ensure all extracted fields are flat strings. For example, 'naturalidade' MUST be a single string (e.g., 'João Pessoa - PB'), NEVER a nested object. "
             "Return the data strictly as a valid JSON object with a top-level key 'entities'. "
             "Translate all keys and values into Brazilian Portuguese (pt-BR). "
