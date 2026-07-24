@@ -342,6 +342,8 @@ class DocumentExtractor:
             "- message: string (description of the error)\n"
             "- expected: string (the value from ground truth)\n"
             "- found_in_text: string or null (the EXACT literal substring from the raw draft text that caused the mismatch)\n"
+            "- requires_human_review: boolean (set to true if you are uncertain about the discrepancy, e.g., contextual nuance or ambiguous formatting)\n"
+            "- review_reason: string or null (if requires_human_review is true, explain why human verification is needed)\n"
         )
 
         content = f"GROUND_TRUTH:\n{json.dumps(ground_truth, ensure_ascii=False)}\n\nDRAFT_TEXT:\n{draft_text}"
