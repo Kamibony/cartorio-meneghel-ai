@@ -67,8 +67,6 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
 
         return False
 
-    has_casamento = any(is_certidao_casamento(e.get("_source_document_type", "")) for e in entities)
-
     merged_entities = []
 
     for entity in entities:
@@ -81,14 +79,27 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
 
         if matched_idx == -1:
             # Not matched, add as a new entity (copying to avoid mutating source)
-            merged_entities.append(dict(entity))
+            new_ent = dict(entity)
+            doc_type = new_ent.pop("_source_document_type", "")
+            new_ent["sources"] = [doc_type] if doc_type else []
+            merged_entities.append(new_ent)
         else:
             # Matched, perform merge
             existing = merged_entities[matched_idx]
 
+            # Non-destructively track sources
+            sources = list(existing.get("sources", []))
+            incoming_doc_type = entity.get("_source_document_type", "")
+
+            # Evaluate existing certidao state BEFORE modifying sources list
+            existing_is_cert = any(is_certidao(src) for src in sources)
+
+            if incoming_doc_type and incoming_doc_type not in sources:
+                sources.append(incoming_doc_type)
+            existing["sources"] = sources
+
             # Universal Legal Hierarchy Rule Check
-            incoming_is_cert = is_certidao(entity.get("_source_document_type", ""))
-            existing_is_cert = is_certidao(existing.get("_source_document_type", ""))
+            incoming_is_cert = is_certidao(incoming_doc_type)
 
             # If the incoming document is a Certidão and the existing is NOT,
             # the Certidão's fields unconditionally overwrite conflicting fields.
@@ -99,6 +110,8 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
             protect_existing = existing_is_cert and not incoming_is_cert
 
             for k, v in entity.items():
+                if k == "_source_document_type" or k == "sources":
+                    continue
                 if v not in (None, ""):
                     if force_overwrite:
                         existing[k] = v
@@ -115,15 +128,9 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                         else:
                             existing[k] = v
 
-            # Keep the Certidao tag alive if it ever got applied, to protect future merges
-            if incoming_is_cert:
-                if is_certidao_casamento(entity.get("_source_document_type", "")):
-                    existing["_source_document_type"] = "Certidão de Casamento (Merged)"
-                elif not is_certidao_casamento(existing.get("_source_document_type", "")):
-                    existing["_source_document_type"] = "Certidao (Merged)"
-
     for existing in merged_entities:
-        if has_casamento or is_certidao_casamento(existing.get("_source_document_type", "")):
+        sources = list(existing.get("sources", []))
+        if any(is_certidao_casamento(str(src).lower()) for src in sources):
             existing["estado_civil"] = "Casado(a)"
 
     return merged_entities
