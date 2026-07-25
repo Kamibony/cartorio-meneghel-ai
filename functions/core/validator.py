@@ -6,6 +6,13 @@ from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
+CORE_IDENTITY_FIELDS = {
+    "nome", "cpf", "rg", "orgao_emissor_rg", "data_nascimento",
+    "estado_civil", "filiacao_mae", "filiacao_pai", "naturalidade",
+    "nacionalidade", "profissao", "endereco", "regime_bens"
+}
+
+
 @dataclass
 class Discrepancy:
     field: str
@@ -173,12 +180,6 @@ class DocumentValidator:
 
             elif error.category == "MISSING_FIELD":
                 # Filter out non-core metadata fields
-                CORE_IDENTITY_FIELDS = {
-                    "nome", "cpf", "rg", "orgao_emissor_rg", "data_nascimento",
-                    "estado_civil", "filiacao_mae", "filiacao_pai", "naturalidade",
-                    "nacionalidade", "profissao", "endereco", "regime_bens"
-                }
-
                 # Extract the base field name (e.g., 'document_type' from 'entities[0].document_type')
                 field_base = error.field.split('.')[-1]
 
