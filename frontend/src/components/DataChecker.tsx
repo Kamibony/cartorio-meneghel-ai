@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
 import { ENV } from '../config/env';
+import { diff_match_patch } from 'diff-match-patch';
+
 
 // Type definitions for the expected API response
 interface ValidationError {
@@ -31,6 +33,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [cachedDraftText, setCachedDraftText] = useState<{fileName: string, text: string} | null>(null);
   const [isValidating, setIsValidating] = useState<boolean>(false);
+  const [isFormatting, setIsFormatting] = useState<boolean>(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[] | null>(null);
   const [resolvedErrors, setResolvedErrors] = useState<Set<string>>(new Set());
   const [serverError, setServerError] = useState<string | null>(null);
@@ -40,7 +43,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
 
-  const handleApplyCorrections = () => {
+  const handleApplyCorrections = async () => {
     if (!validationErrors) return;
 
     let textToFix = typedText;
@@ -48,32 +51,40 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       textToFix = cachedDraftText.text;
     }
 
-    let resultText = textToFix;
+    setIsFormatting(true);
+    setServerError(null);
+    try {
+      const apiUrl = ENV.apiUrl;
+      const endpoint = `${apiUrl}/format-draft`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          raw_text: textToFix,
+          ground_truth: groundTruth,
+        }),
+      });
 
-    // Apply deterministic replacements backwards or globally?
-    // Since we have found_in_text for exact literal strings, let's just do a global replace
-    // for all unresolved VALUE_MISMATCH errors where we have found_in_text and expected.
-    validationErrors.forEach(err => {
-      if (err.category === 'VALUE_MISMATCH' && !resolvedErrors.has(err.field)) {
-        if (err.found_in_text && err.expected) {
-           // Escape the found text for regex
-           const escapedFoundText = err.found_in_text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-           // Build a regex that matches the found text, optionally followed by punctuation, keeping the punctuation
-           let regexPattern = `(${escapedFoundText})`;
-           if (err.expected.startsWith(err.found_in_text) && err.expected.length > err.found_in_text.length) {
-               const appended = err.expected.substring(err.found_in_text.length).trim();
-               const escapedAppended = appended.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-               regexPattern += `(?!\\s*${escapedAppended})`;
-           }
-           regexPattern += `([.,;:]?)`;
-           const regex = new RegExp(regexPattern, 'g');
-           resultText = resultText.replace(regex, `${err.expected}$2`);
-        }
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Erro no servidor: Resposta não está em formato JSON.');
       }
-    });
 
-    setCorrectedText(resultText);
-    setViewMode('visual_review');
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Ocorreu um erro desconhecido durante a formatação.');
+      }
+
+      setCorrectedText(data.formatted_text);
+      setViewMode('visual_review');
+    } catch (error: any) {
+      setServerError(error.message || 'Falha ao conectar com o serviço de formatação.');
+      console.error('Format error:', error);
+    } finally {
+      setIsFormatting(false);
+    }
   };
 
   const handleValidate = async () => {
@@ -320,12 +331,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
              {validationErrors && validationErrors.length > 0 && viewMode === 'validation' && (
                 <button
                   onClick={handleApplyCorrections}
-                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded shadow-sm text-white bg-green-600 hover:bg-green-700"
+                  disabled={isFormatting}
+                  className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded shadow-sm text-white bg-green-600 hover:bg-green-700 ${isFormatting ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Aplicar Correções Seguras
+                  {isFormatting ? 'Formatando...' : 'Aplicar Correções Seguras'}
                 </button>
              )}
           </div>
@@ -333,53 +345,22 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           {viewMode === 'visual_review' && correctedText && (
             <div className="flex-1 flex flex-col p-4 border border-gray-300 bg-white rounded-md overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed">
               {(() => {
-                let currentText = inputType === 'upload' && cachedDraftText ? cachedDraftText.text : typedText;
+                const currentText = inputType === 'upload' && cachedDraftText ? cachedDraftText.text : typedText;
 
-                const errorsToFix = (validationErrors || []).filter(err => err.category === 'VALUE_MISMATCH' && !resolvedErrors.has(err.field) && err.found_in_text && err.expected);
+                const dmp = new diff_match_patch();
+                const diffs = dmp.diff_main(currentText, correctedText);
+                dmp.diff_cleanupSemantic(diffs);
 
-                if (errorsToFix.length === 0) return <span>{currentText}</span>;
-
-                let elements: React.ReactNode[] = [currentText];
-
-                errorsToFix.forEach((err, idx) => {
-                   const foundText = err.found_in_text as string;
-                   const expectedText = err.expected as string;
-
-                   const newElements: React.ReactNode[] = [];
-                   const escapedFoundText = foundText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                   let regexPattern = `(${escapedFoundText})`;
-                   if (expectedText.startsWith(foundText) && expectedText.length > foundText.length) {
-                       const appended = expectedText.substring(foundText.length).trim();
-                       const escapedAppended = appended.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                       regexPattern += `(?!\\s*${escapedAppended})`;
-                   }
-                   regexPattern += `([.,;:]?)`;
-                   const regex = new RegExp(regexPattern, 'g');
-
-                   elements.forEach((el, i) => {
-                       if (typeof el === 'string') {
-                           let lastIndex = 0;
-                           let match;
-                           while ((match = regex.exec(el)) !== null) {
-                               newElements.push(el.slice(lastIndex, match.index));
-                               newElements.push(
-                                   <span key={`edit-${idx}-${i}-${match.index}`}>
-                                      <del className="text-red-500 bg-red-50 line-through px-1 rounded mx-0.5">{foundText}</del>
-                                      <ins className="text-green-700 bg-green-50 font-bold px-1 rounded mx-0.5 no-underline">{expectedText}</ins>
-                                      {match[2]}
-                                   </span>
-                               );
-                               lastIndex = regex.lastIndex;
-                           }
-                           newElements.push(el.slice(lastIndex));
-                       } else {
-                           newElements.push(el);
-                       }
-                   });
-                   elements = newElements;
+                return diffs.map((part, index) => {
+                    const [op, text] = part;
+                    if (op === 1) {
+                        return <ins key={index} className="text-green-700 bg-green-50 font-bold px-1 rounded mx-0.5 no-underline">{text}</ins>;
+                    } else if (op === -1) {
+                        return <del key={index} className="text-red-500 bg-red-50 line-through px-1 rounded mx-0.5">{text}</del>;
+                    } else {
+                        return <span key={index}>{text}</span>;
+                    }
                 });
-
-                return elements;
               })()}
             </div>
           )}

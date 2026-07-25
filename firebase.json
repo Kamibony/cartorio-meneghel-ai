@@ -36,6 +36,10 @@
         "function": "correct_document_text"
       },
       {
+        "source": "/api/format-draft",
+        "function": "format_draft"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
