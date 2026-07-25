@@ -22,6 +22,10 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
     def is_certidao(doc_type_str):
         return doc_type_str and "certid" in str(doc_type_str).lower()
 
+    def is_certidao_casamento(doc_type_str):
+        doc_type_lower = str(doc_type_str).lower()
+        return "certid" in doc_type_lower and "casamento" in doc_type_lower
+
     def do_entities_match(ent1, ent2):
         cpf1 = normalize_digits(ent1.get("cpf", ""))
         cpf2 = normalize_digits(ent2.get("cpf", ""))
@@ -51,6 +55,10 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                 return True
 
         return False
+
+    for entity in entities:
+        if is_certidao_casamento(entity.get("_source_document_type", "")):
+            entity["estado_civil"] = "Casado(a)"
 
     merged_entities = []
 
@@ -325,6 +333,7 @@ class DocumentExtractor:
         from core.validator import normalize_digits, normalize_string
 
         try:
+            from core.validator import CORE_IDENTITY_FIELDS
             # 1. Extract structured data from the draft text
             draft_data = self.extract_from_text(draft_text)
             draft_entities = draft_data.get("entities", [])
@@ -371,9 +380,8 @@ class DocumentExtractor:
                     continue
 
                 # Compare fields for the matched entity
-                for key, expected_val in gt_ent.items():
-                    if key.startswith("_"):
-                        continue
+                for key in CORE_IDENTITY_FIELDS:
+                    expected_val = gt_ent.get(key)
                     if expected_val in (None, ""):
                         continue
 
