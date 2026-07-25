@@ -355,7 +355,11 @@ class DocumentExtractor:
             # 1. Extract structured data from the draft text
             draft_data = self.extract_from_text(draft_text)
             draft_entities = draft_data.get("entities", [])
-            gt_entities = ground_truth.get("entities", [])
+
+            # Run ground truth through the deduplication engine to enforce Universal Legal Hierarchy Rule
+            # and `estado_civil` domain logic ("Casado(a)") before deterministic diffing occurs.
+            raw_gt_entities = ground_truth.get("entities", [])
+            gt_entities = deduplicate_entities(raw_gt_entities)
 
             discrepancies = []
 
