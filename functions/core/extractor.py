@@ -81,7 +81,16 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
             # Not matched, add as a new entity (copying to avoid mutating source)
             new_ent = dict(entity)
             doc_type = new_ent.pop("_source_document_type", "")
-            new_ent["sources"] = [doc_type] if doc_type else []
+
+            # Non-destructively track sources for new entities as well
+            current_sources = new_ent.get("sources", [])
+            if not isinstance(current_sources, list):
+                current_sources = []
+
+            if doc_type and doc_type not in current_sources:
+                current_sources.append(doc_type)
+
+            new_ent["sources"] = current_sources
             merged_entities.append(new_ent)
         else:
             # Matched, perform merge
@@ -113,6 +122,12 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                 if k == "_source_document_type" or k == "sources":
                     continue
                 if v not in (None, ""):
+                    # ALWAYS prioritize the longest name string for names
+                    if k == "nome" and existing.get("nome"):
+                        if len(str(v)) > len(str(existing["nome"])):
+                            existing[k] = v
+                        continue
+
                     if force_overwrite:
                         existing[k] = v
                     elif protect_existing:
@@ -120,16 +135,12 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                             # Only fill it in if the Certidao was missing it entirely
                             existing[k] = v
                     else:
-                        # Standard merge logic: newer non-empty value takes precedence,
-                        # BUT for names, prefer the longer one to capture appended surnames
-                        if k == "nome" and existing.get("nome"):
-                            if len(str(v)) > len(str(existing["nome"])):
-                                existing[k] = v
-                        else:
-                            existing[k] = v
+                        # Standard merge logic: newer non-empty value takes precedence
+                        existing[k] = v
 
     for existing in merged_entities:
         sources = list(existing.get("sources", []))
+        print(f"DEBUG: entity.get('sources') before estado_civil rule: {sources}")
         if any(is_certidao_casamento(str(src).lower()) for src in sources):
             existing["estado_civil"] = "Casado(a)"
 
