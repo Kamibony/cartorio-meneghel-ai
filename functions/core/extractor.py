@@ -215,8 +215,6 @@ class DocumentExtractor:
 
             try:
                 data = json.loads(raw_text)
-                if "entities" in data and isinstance(data["entities"], list):
-                    data["entities"] = deduplicate_entities(data["entities"])
                 return data
             except json.JSONDecodeError as je:
                 raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
@@ -258,11 +256,15 @@ class DocumentExtractor:
         # Now deterministically merge the entities
         merged_entities = deduplicate_entities(all_entities)
 
-        # Clean up internal tags
+        # Clean up internal tags and enforce whitelist
+        from core.validator import CORE_IDENTITY_FIELDS
+        final_entities = []
         for entity in merged_entities:
             entity.pop("_source_document_type", None)
+            clean_entity = {k: v for k, v in entity.items() if k in CORE_IDENTITY_FIELDS}
+            final_entities.append(clean_entity)
 
-        return {"entities": merged_entities}
+        return {"entities": final_entities}
 
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
