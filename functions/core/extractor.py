@@ -36,17 +36,29 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
         nome1 = normalize_string(ent1.get("nome", ""))
         nome2 = normalize_string(ent2.get("nome", ""))
 
+        def is_name_compatible(n1, n2):
+            if not n1 or not n2:
+                return False
+            if n1 in n2 or n2 in n1:
+                return True
+            stopwords = {"DE", "DA", "DO", "DAS", "DOS", "E"}
+            t1 = {w for w in n1.split() if w not in stopwords}
+            t2 = {w for w in n2.split() if w not in stopwords}
+            if t1 and t2 and (t1.issubset(t2) or t2.issubset(t1)):
+                return True
+            return False
+
         # If one CPF is missing or they don't have CPFs, check name compatibility
         if (not cpf1 or not cpf2) and nome1 and nome2:
             # Check for prefix or substring match (e.g. BIANCA AGUIAR SANTOS vs BIANCA AGUIAR SANTOS DANTAS)
-            if nome1 in nome2 or nome2 in nome1:
+            if is_name_compatible(nome1, nome2):
                 # Need to check mother's name to avoid false positives (e.g. siblings)
                 mae1 = normalize_string(ent1.get("filiacao_mae", ""))
                 mae2 = normalize_string(ent2.get("filiacao_mae", ""))
 
                 # If both have a mother's name, they must match or one must be a substring
                 if mae1 and mae2:
-                    if mae1 in mae2 or mae2 in mae1:
+                    if is_name_compatible(mae1, mae2):
                         return True
                     else:
                         return False # Explicit conflict
@@ -56,9 +68,7 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
 
         return False
 
-    for entity in entities:
-        if is_certidao_casamento(entity.get("_source_document_type", "")):
-            entity["estado_civil"] = "Casado(a)"
+    has_casamento = any(is_certidao_casamento(e.get("_source_document_type", "")) for e in entities)
 
     merged_entities = []
 
@@ -108,7 +118,14 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
 
             # Keep the Certidao tag alive if it ever got applied, to protect future merges
             if incoming_is_cert:
-                existing["_source_document_type"] = "Certidao (Merged)"
+                if is_certidao_casamento(entity.get("_source_document_type", "")):
+                    existing["_source_document_type"] = "Certidão de Casamento (Merged)"
+                elif not is_certidao_casamento(existing.get("_source_document_type", "")):
+                    existing["_source_document_type"] = "Certidao (Merged)"
+
+    for existing in merged_entities:
+        if has_casamento or is_certidao_casamento(existing.get("_source_document_type", "")):
+            existing["estado_civil"] = "Casado(a)"
 
     return merged_entities
 
