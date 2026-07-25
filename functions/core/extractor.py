@@ -128,9 +128,31 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
             protect_existing = existing_is_cert and not incoming_is_cert
 
             for k, v in entity.items():
-                if k == "_source_document_type" or k == "sources":
+                skip_keys = {"_source_document_type", "sources", "has_marriage_certificate", "_conflicts", "_resolved_conflicts"}
+                if k in skip_keys:
                     continue
                 if v not in (None, ""):
+                    # Conflict detection
+                    existing_val = existing.get(k)
+                    if existing_val not in (None, ""):
+                        norm_v = normalize_string(str(v))
+                        norm_e = normalize_string(str(existing_val))
+
+                        if norm_v != norm_e and not (k == "nome" and (norm_v in norm_e or norm_e in norm_v)):
+                            if "_conflicts" not in existing:
+                                existing["_conflicts"] = {}
+                            if k not in existing["_conflicts"]:
+                                existing["_conflicts"][k] = {
+                                    "options": [
+                                        {"value": existing_val, "source": existing.get("_source_document_type", "Desconhecido")},
+                                        {"value": v, "source": incoming_doc_type}
+                                    ]
+                                }
+                            else:
+                                found = any(opt.get("value") == v for opt in existing["_conflicts"][k]["options"])
+                                if not found:
+                                    existing["_conflicts"][k]["options"].append({"value": v, "source": incoming_doc_type})
+
                     # ALWAYS prioritize the longest name string for names
                     if k == "nome" and existing.get("nome"):
                         if len(str(v)) > len(str(existing["nome"])):
@@ -149,7 +171,20 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
 
     for existing in merged_entities:
         if existing.get("has_marriage_certificate"):
-            existing["estado_civil"] = "Casado(a)"
+            resolved_conflicts = existing.get("_resolved_conflicts", [])
+            if "estado_civil" not in resolved_conflicts:
+                existing_civil = existing.get("estado_civil")
+                if existing_civil and normalize_string(existing_civil) != normalize_string("Casado(a)"):
+                    if "_conflicts" not in existing:
+                        existing["_conflicts"] = {}
+                    if "estado_civil" not in existing["_conflicts"]:
+                        existing["_conflicts"]["estado_civil"] = {
+                            "options": [
+                                {"value": existing_civil, "source": existing.get("_source_document_type", "Desconhecido")},
+                                {"value": "Casado(a)", "source": "Certidão de Casamento"}
+                            ]
+                        }
+                existing["estado_civil"] = "Casado(a)"
 
     return merged_entities
 
