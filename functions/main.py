@@ -225,6 +225,104 @@ def api_status(req: https_fn.Request) -> https_fn.Response:
     )
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
+def format_draft(req: https_fn.Request) -> https_fn.Response:
+    """
+    Formats the raw draft text by securely injecting ground truth entities using an LLM.
+    Accepts POST requests with JSON payload: {"raw_text": "...", "ground_truth": {...}}
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    try:
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing JSON payload"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        raw_text = data.get("raw_text", "")
+        ground_truth = data.get("ground_truth", {})
+
+        if not isinstance(raw_text, str) or not isinstance(ground_truth, dict):
+            return https_fn.Response(
+                json.dumps({"error": "Invalid payload types. Expected string for raw_text and dict for ground_truth"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        from google import genai
+        from google.genai import types
+
+        # Initialize the Gemini client
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return https_fn.Response(
+                json.dumps({"error": "Gemini API key not configured"}),
+                status=500,
+                content_type="application/json"
+            )
+
+        client = genai.Client(api_key=api_key)
+
+        prompt = f"""
+<TASK>
+Update the following raw draft text by securely injecting the provided ground truth entity data.
+</TASK>
+
+<BUSINESS_RULES>
+1. You must act STRICTLY as a grammar-aware data-entry formatter.
+2. Inject the facts from the ground truth JSON into the text.
+3. Conjugate Portuguese grammar correctly (e.g., feminine vs masculine, singular vs plural).
+4. For missing fields in the text, insert the data naturally.
+5. DO NOT alter any legal boilerplate, punctuation, or formatting outside of the entity data.
+</BUSINESS_RULES>
+
+<GROUND_TRUTH_JSON>
+{json.dumps(ground_truth, ensure_ascii=False, indent=2)}
+</GROUND_TRUTH_JSON>
+
+<RAW_DRAFT_TEXT>
+{raw_text}
+</RAW_DRAFT_TEXT>
+
+Return the updated final text ONLY, without any markdown formatting or explanations.
+"""
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.0
+            )
+        )
+
+        formatted_text = response.text.strip()
+        # Remove potential markdown code blocks if the LLM adds them despite instructions
+        if formatted_text.startswith("```"):
+            lines = formatted_text.split('\n')
+            if len(lines) > 2:
+                formatted_text = '\n'.join(lines[1:-1])
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "formatted_text": formatted_text}),
+            status=200,
+            content_type="application/json"
+        )
+    except Exception as e:
+        logger.error("Error in format_draft", exc_info=True)
+        return https_fn.Response(
+            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            status=500,
+            content_type="application/json"
+        )
+
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
 def validate_document_text(req: https_fn.Request) -> https_fn.Response:
     """
     Validates typed text against ground truth deterministically.
