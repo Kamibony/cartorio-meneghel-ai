@@ -40,8 +40,43 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [correctedText, setCorrectedText] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'validation' | 'visual_review' | 'corrected'>('validation');
 
+  const [resolvedGroundTruth, setResolvedGroundTruth] = useState<any>(null);
+
+  // Sync prop groundTruth to local state so we can mutate it upon resolution
+  React.useEffect(() => {
+     setResolvedGroundTruth(groundTruth ? JSON.parse(JSON.stringify(groundTruth)) : null);
+  }, [groundTruth]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
+
+  const hasUnresolvedConflicts = () => {
+      if (!resolvedGroundTruth || !resolvedGroundTruth.entities) return false;
+      for (const entity of resolvedGroundTruth.entities) {
+          if (entity._conflicts && Object.keys(entity._conflicts).length > 0) {
+              return true;
+          }
+      }
+      return false;
+  };
+
+  const resolveConflict = (entityIndex: number, field: string, value: string) => {
+      if (!resolvedGroundTruth) return;
+
+      const newGt = { ...resolvedGroundTruth };
+      const entity = newGt.entities[entityIndex];
+
+      entity[field] = value;
+
+      if (!entity._resolved_conflicts) {
+          entity._resolved_conflicts = [];
+      }
+      entity._resolved_conflicts.push(field);
+
+      delete entity._conflicts[field];
+
+      setResolvedGroundTruth(newGt);
+  };
 
   const handleApplyCorrections = async () => {
     if (!validationErrors) return;
@@ -63,7 +98,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
         },
         body: JSON.stringify({
           raw_text: textToFix,
-          ground_truth: groundTruth,
+          ground_truth: resolvedGroundTruth,
         }),
       });
 
@@ -126,7 +161,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ground_truth: groundTruth,
+          ground_truth: resolvedGroundTruth,
           typed_text: textToValidate,
         }),
       });
@@ -155,7 +190,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
     }
   };
 
-  const isButtonDisabled = isValidating || isUploading || isExtracting || !groundTruth;
+  const isButtonDisabled = isValidating || isUploading || isExtracting || !groundTruth || hasUnresolvedConflicts();
   const isProcessing = isValidating || isUploading || isExtracting;
 
   const handleMarkAsResolved = async (error: ValidationError) => {
@@ -219,6 +254,47 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       </div>
 
       <div className="p-4 flex-1 flex flex-col relative">
+
+        {hasUnresolvedConflicts() && (
+            <div className="mb-4 bg-orange-50 border-l-4 border-orange-400 p-4 rounded shadow-sm">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-orange-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                    </div>
+                    <div className="ml-3">
+                        <h3 className="text-sm font-medium text-orange-800">Conflito de Dados Detectado</h3>
+                        <div className="mt-2 text-sm text-orange-700">
+                            <p>Existem dados conflitantes entre os documentos enviados. Por favor, selecione o valor correto antes de prosseguir.</p>
+                            <div className="mt-3 flex flex-col gap-3">
+                                {resolvedGroundTruth?.entities?.map((entity: any, eIdx: number) => {
+                                    if (!entity._conflicts || Object.keys(entity._conflicts).length === 0) return null;
+                                    return Object.entries(entity._conflicts).map(([field, conflictData]: [string, any], cIdx) => (
+                                        <div key={`${eIdx}-${field}-${cIdx}`} className="bg-white p-3 rounded border border-orange-200">
+                                            <p className="font-semibold capitalize mb-2">{entity.nome} - {field.replace('_', ' ')}:</p>
+                                            <div className="flex flex-col gap-2">
+                                                {conflictData.options.map((opt: any, oIdx: number) => (
+                                                    <button
+                                                        key={oIdx}
+                                                        onClick={() => resolveConflict(eIdx, field, opt.value)}
+                                                        className="text-left px-3 py-2 border border-orange-300 rounded hover:bg-orange-100 transition-colors"
+                                                    >
+                                                        <span className="font-medium">{opt.value}</span>
+                                                        <span className="text-xs text-orange-600 ml-2">(Fonte: {opt.source})</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ));
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
          {isProcessing && (
           <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
             <svg className="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

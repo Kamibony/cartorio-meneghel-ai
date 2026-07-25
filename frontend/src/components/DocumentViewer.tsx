@@ -120,6 +120,33 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
                 for (const key of Object.keys(newEntity)) {
                     const v = newEntity[key];
                     if (v !== null && v !== undefined && v !== '') {
+                        const skipKeys = ['_source_document_type', 'sources', 'has_marriage_certificate', '_conflicts', '_resolved_conflicts'];
+                        if (!skipKeys.includes(key)) {
+                            const existingVal = existing[key];
+                            if (existingVal !== null && existingVal !== undefined && existingVal !== '') {
+                                const normV = String(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                                const normE = String(existingVal).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+                                if (normV !== normE && (key !== 'nome' || (key === 'nome' && !normV.includes(normE) && !normE.includes(normV)))) {
+                                    if (!existing._conflicts) existing._conflicts = {};
+                                    if (!existing._conflicts[key]) {
+                                        existing._conflicts[key] = {
+                                            options: [
+                                                { value: existingVal, source: existing._source_document_type },
+                                                { value: v, source: f.documentType }
+                                            ]
+                                        };
+                                    } else {
+                                        // add if not present
+                                        const found = existing._conflicts[key].options.some((opt: any) => opt.value === v);
+                                        if (!found) {
+                                            existing._conflicts[key].options.push({ value: v, source: f.documentType });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if (forceOverwrite) {
                             existing[key] = v;
                         } else if (protectExisting) {
@@ -141,6 +168,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
                 if (incomingIsCertidao) {
                     existing._source_document_type = 'Certidão (Merged)';
                 }
+                if (newEntity.has_marriage_certificate) {
+                     existing.has_marriage_certificate = true;
+                }
             }
           });
         }
@@ -152,6 +182,26 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
         }
       }
     });
+
+    for (const existing of mergedEntities) {
+        if (existing.has_marriage_certificate) {
+            // Apply domain logic override if it doesn't have an explicit user resolution
+            if (!existing._resolved_conflicts || !existing._resolved_conflicts.includes('estado_civil')) {
+                if (existing.estado_civil && existing.estado_civil !== 'Casado(a)') {
+                     if (!existing._conflicts) existing._conflicts = {};
+                     if (!existing._conflicts['estado_civil']) {
+                         existing._conflicts['estado_civil'] = {
+                             options: [
+                                 { value: existing.estado_civil, source: existing._source_document_type },
+                                 { value: 'Casado(a)', source: 'Certidão de Casamento' }
+                             ]
+                         };
+                     }
+                }
+                existing.estado_civil = 'Casado(a)';
+            }
+        }
+    }
 
     if (mergedEntities.length > 0) {
         unifiedData.entities = mergedEntities;
