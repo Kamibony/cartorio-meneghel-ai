@@ -263,15 +263,9 @@ class DocumentExtractor:
         # Now deterministically merge the entities
         merged_entities = deduplicate_entities(all_entities)
 
-        # Clean up internal tags and enforce whitelist
-        from core.validator import CORE_IDENTITY_FIELDS
-        final_entities = []
-        for entity in merged_entities:
-            entity.pop("_source_document_type", None)
-            clean_entity = {k: v for k, v in entity.items() if k in CORE_IDENTITY_FIELDS}
-            final_entities.append(clean_entity)
-
-        return {"entities": final_entities}
+        # Do not enforce whitelist or clean up tags yet
+        # The raw dictionaries must flow completely through to audit_draft
+        return {"entities": merged_entities}
 
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
@@ -366,7 +360,14 @@ class DocumentExtractor:
             # Run ground truth through the deduplication engine to enforce Universal Legal Hierarchy Rule
             # and `estado_civil` domain logic ("Casado(a)") before deterministic diffing occurs.
             raw_gt_entities = ground_truth.get("entities", [])
-            gt_entities = deduplicate_entities(raw_gt_entities)
+            merged_gt_entities = deduplicate_entities(raw_gt_entities)
+
+            # Apply CORE_IDENTITY_FIELDS whitelist to the merged entities
+            # This ensures internal metadata like 'sources' does not leak into the validation
+            gt_entities = []
+            for entity in merged_gt_entities:
+                clean_entity = {k: v for k, v in entity.items() if k in CORE_IDENTITY_FIELDS}
+                gt_entities.append(clean_entity)
 
             discrepancies = []
 
