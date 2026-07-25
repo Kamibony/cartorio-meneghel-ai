@@ -13,46 +13,61 @@ _semaphore = threading.Semaphore(3)
 def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
     """
     Deterministically deduplicates and merges entities across documents.
-    Matches by CPF first, falling back to Normalized Name + Filiacao Mae.
+    Uses O(N^2) pairwise comparison to allow matching when CPFs are missing (e.g. Certidoes vs RG).
+    Matches by CPF first, falling back to Normalized Name (with prefix/substring match) + non-conflicting Filiacao Mae.
     Enforces the Universal Legal Hierarchy Rule: 'Certidão' data strictly overwrites others.
     """
     from core.validator import normalize_digits, normalize_string
 
-    merged_entities = {}
-    unmerged = []
-
-    def get_merge_key(ent):
-        cpf_raw = ent.get("cpf")
-        cpf_norm = normalize_digits(cpf_raw) if cpf_raw else ""
-        if cpf_norm:
-            return f"cpf:{cpf_norm}"
-
-        # Fallback to name + mother's name
-        nome_raw = ent.get("nome")
-        mae_raw = ent.get("filiacao_mae")
-
-        if nome_raw and mae_raw:
-            nome_norm = normalize_string(nome_raw)
-            mae_norm = normalize_string(mae_raw)
-            return f"nome:{nome_norm}|mae:{mae_norm}"
-
-        return None
-
     def is_certidao(doc_type_str):
         return doc_type_str and "certid" in str(doc_type_str).lower()
 
+    def do_entities_match(ent1, ent2):
+        cpf1 = normalize_digits(ent1.get("cpf", ""))
+        cpf2 = normalize_digits(ent2.get("cpf", ""))
+
+        if cpf1 and cpf2 and cpf1 == cpf2:
+            return True
+
+        nome1 = normalize_string(ent1.get("nome", ""))
+        nome2 = normalize_string(ent2.get("nome", ""))
+
+        # If one CPF is missing or they don't have CPFs, check name compatibility
+        if (not cpf1 or not cpf2) and nome1 and nome2:
+            # Check for prefix or substring match (e.g. BIANCA AGUIAR SANTOS vs BIANCA AGUIAR SANTOS DANTAS)
+            if nome1 in nome2 or nome2 in nome1:
+                # Need to check mother's name to avoid false positives (e.g. siblings)
+                mae1 = normalize_string(ent1.get("filiacao_mae", ""))
+                mae2 = normalize_string(ent2.get("filiacao_mae", ""))
+
+                # If both have a mother's name, they must match or one must be a substring
+                if mae1 and mae2:
+                    if mae1 in mae2 or mae2 in mae1:
+                        return True
+                    else:
+                        return False # Explicit conflict
+
+                # If only one has a mother's name or neither do, accept the name match
+                return True
+
+        return False
+
+    merged_entities = []
+
     for entity in entities:
-        merge_key = get_merge_key(entity)
+        # Find if this entity matches an already merged entity
+        matched_idx = -1
+        for i, merged_ent in enumerate(merged_entities):
+            if do_entities_match(entity, merged_ent):
+                matched_idx = i
+                break
 
-        if not merge_key:
-            unmerged.append(entity)
-            continue
-
-        if merge_key not in merged_entities:
-            # We must create a copy so we don't accidentally mutate the original and mix types
-            merged_entities[merge_key] = dict(entity)
+        if matched_idx == -1:
+            # Not matched, add as a new entity (copying to avoid mutating source)
+            merged_entities.append(dict(entity))
         else:
-            existing = merged_entities[merge_key]
+            # Matched, perform merge
+            existing = merged_entities[matched_idx]
 
             # Universal Legal Hierarchy Rule Check
             incoming_is_cert = is_certidao(entity.get("_source_document_type", ""))
@@ -75,14 +90,19 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                             # Only fill it in if the Certidao was missing it entirely
                             existing[k] = v
                     else:
-                        # Standard merge: newer non-empty value takes precedence
-                        existing[k] = v
+                        # Standard merge logic: newer non-empty value takes precedence,
+                        # BUT for names, prefer the longer one to capture appended surnames
+                        if k == "nome" and existing.get("nome"):
+                            if len(str(v)) > len(str(existing["nome"])):
+                                existing[k] = v
+                        else:
+                            existing[k] = v
 
             # Keep the Certidao tag alive if it ever got applied, to protect future merges
             if incoming_is_cert:
                 existing["_source_document_type"] = "Certidao (Merged)"
 
-    return list(merged_entities.values()) + unmerged
+    return merged_entities
 
 
 class DocumentExtractor:
@@ -312,17 +332,12 @@ class DocumentExtractor:
 
             discrepancies = []
 
-            # Create lookup dictionaries for draft entities (by CPF, then Name)
+            # Create lookup dictionaries for draft entities (by CPF)
             draft_by_cpf = {}
-            draft_by_name = {}
             for draft_ent in draft_entities:
                 cpf = normalize_digits(draft_ent.get("cpf", ""))
                 if cpf:
                     draft_by_cpf[cpf] = draft_ent
-
-                nome = normalize_string(draft_ent.get("nome", ""))
-                if nome:
-                    draft_by_name[nome] = draft_ent
 
             # 2. Deterministic Diffing
             for i, gt_ent in enumerate(gt_entities):
@@ -333,8 +348,15 @@ class DocumentExtractor:
                 matched_draft_ent = None
                 if gt_cpf and gt_cpf in draft_by_cpf:
                     matched_draft_ent = draft_by_cpf[gt_cpf]
-                elif gt_nome and gt_nome in draft_by_name:
-                    matched_draft_ent = draft_by_name[gt_nome]
+                else:
+                    # Fallback to name substring matching for draft entity lookup
+                    # E.g. Ground Truth has "BIANCA AGUIAR SANTOS DANTAS"
+                    # Draft has "BIANCA AGUIAR SANTOS"
+                    for draft_ent in draft_entities:
+                        draft_nome = normalize_string(draft_ent.get("nome", ""))
+                        if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                            matched_draft_ent = draft_ent
+                            break
 
                 if not matched_draft_ent:
                     # Entity entirely missing from draft
