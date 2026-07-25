@@ -22,9 +22,6 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
     def is_certidao(doc_type_str):
         return doc_type_str and "certid" in str(doc_type_str).lower()
 
-    def is_certidao_casamento(doc_type_str):
-        return "casamento" in str(doc_type_str).lower()
-
     def do_entities_match(ent1, ent2):
         cpf1 = normalize_digits(ent1.get("cpf", ""))
         cpf2 = normalize_digits(ent2.get("cpf", ""))
@@ -115,6 +112,10 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                 sources.append(incoming_doc_type)
             existing["sources"] = sources
 
+            # Refactored boolean flag override
+            if entity.get("has_marriage_certificate"):
+                existing["has_marriage_certificate"] = True
+
             # Universal Legal Hierarchy Rule Check
             incoming_is_cert = is_certidao(incoming_doc_type)
 
@@ -147,9 +148,7 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                         existing[k] = v
 
     for existing in merged_entities:
-        sources = list(existing.get("sources", []))
-        print(f"DEBUG: entity.get('sources') before estado_civil rule: {sources}")
-        if any(is_certidao_casamento(str(src).lower()) for src in sources):
+        if existing.get("has_marriage_certificate"):
             existing["estado_civil"] = "Casado(a)"
 
     return merged_entities
@@ -242,9 +241,12 @@ class DocumentExtractor:
             try:
                 data = json.loads(raw_text)
                 doc_type = data.get("document_type", "Desconhecido")
+                is_casamento = "casamento" in str(doc_type).lower()
                 if "entities" in data and isinstance(data["entities"], list):
                     for ent in data["entities"]:
                         ent["_source_document_type"] = doc_type
+                        if is_casamento:
+                            ent["has_marriage_certificate"] = True
                 return data
             except json.JSONDecodeError as je:
                 raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
@@ -273,10 +275,13 @@ class DocumentExtractor:
 
                 # Tag the document type onto each entity for later merging rules
                 doc_type = extracted_data.get("document_type", "Desconhecido")
+                is_casamento = "casamento" in str(doc_type).lower()
                 entities = extracted_data.get("entities", [])
 
                 for entity in entities:
                     entity["_source_document_type"] = doc_type
+                    if is_casamento:
+                        entity["has_marriage_certificate"] = True
                     all_entities.append(entity)
 
             except Exception as e:
@@ -356,9 +361,12 @@ class DocumentExtractor:
             try:
                 data = json.loads(raw_text)
                 doc_type = data.get("document_type", "Desconhecido")
+                is_casamento = "casamento" in str(doc_type).lower()
                 if "entities" in data and isinstance(data["entities"], list):
                     for ent in data["entities"]:
                         ent["_source_document_type"] = doc_type
+                        if is_casamento:
+                            ent["has_marriage_certificate"] = True
                     data["entities"] = deduplicate_entities(data["entities"])
                 return data
             except json.JSONDecodeError as je:

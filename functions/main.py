@@ -276,6 +276,7 @@ Update the following raw draft text by securely injecting the provided ground tr
 3. Conjugate Portuguese grammar correctly (e.g., feminine vs masculine, singular vs plural).
 4. For missing fields in the text, insert the data naturally.
 5. DO NOT alter any legal boilerplate, punctuation, or formatting outside of the entity data.
+CRITICAL: If the Ground Truth JSON contains fields (like RG or naturalidade) that are missing in the raw text, you MUST insert them naturally into the sentence (e.g., 'portador do RG X', 'natural de Y'). Do not drop data.
 </BUSINESS_RULES>
 
 <GROUND_TRUTH_JSON>
