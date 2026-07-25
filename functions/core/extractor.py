@@ -23,8 +23,7 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
         return doc_type_str and "certid" in str(doc_type_str).lower()
 
     def is_certidao_casamento(doc_type_str):
-        doc_type_lower = str(doc_type_str).lower()
-        return "certid" in doc_type_lower and "casamento" in doc_type_lower
+        return "casamento" in str(doc_type_str).lower()
 
     def do_entities_match(ent1, ent2):
         cpf1 = normalize_digits(ent1.get("cpf", ""))

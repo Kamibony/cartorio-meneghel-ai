@@ -59,7 +59,14 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
            // Escape the found text for regex
            const escapedFoundText = err.found_in_text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
            // Build a regex that matches the found text, optionally followed by punctuation, keeping the punctuation
-           const regex = new RegExp(`(${escapedFoundText})([.,;:]?)`, 'g');
+           let regexPattern = `(${escapedFoundText})`;
+           if (err.expected.startsWith(err.found_in_text) && err.expected.length > err.found_in_text.length) {
+               const appended = err.expected.substring(err.found_in_text.length).trim();
+               const escapedAppended = appended.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+               regexPattern += `(?!\\s*${escapedAppended})`;
+           }
+           regexPattern += `([.,;:]?)`;
+           const regex = new RegExp(regexPattern, 'g');
            resultText = resultText.replace(regex, `${err.expected}$2`);
         }
       }
@@ -340,7 +347,14 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
                    const newElements: React.ReactNode[] = [];
                    const escapedFoundText = foundText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                   const regex = new RegExp(`(${escapedFoundText})([.,;:]?)`, 'g');
+                   let regexPattern = `(${escapedFoundText})`;
+                   if (expectedText.startsWith(foundText) && expectedText.length > foundText.length) {
+                       const appended = expectedText.substring(foundText.length).trim();
+                       const escapedAppended = appended.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                       regexPattern += `(?!\\s*${escapedAppended})`;
+                   }
+                   regexPattern += `([.,;:]?)`;
+                   const regex = new RegExp(regexPattern, 'g');
 
                    elements.forEach((el, i) => {
                        if (typeof el === 'string') {
