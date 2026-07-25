@@ -49,42 +49,97 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     setGlobalError(null);
 
     const unifiedData: any = {};
-    const entityMap = new Map<string, any>();
+    const mergedEntities: any[] = [];
+
+    const isNameCompatible = (n1: string, n2: string) => {
+        if (!n1 || !n2) return false;
+        const norm1 = String(n1).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+        const norm2 = String(n2).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+
+        const stopwords = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+        const t1 = norm1.split(' ').filter(w => !stopwords.has(w));
+        const t2 = norm2.split(' ').filter(w => !stopwords.has(w));
+
+        if (t1.length > 0 && t2.length > 0) {
+            const isSubset1 = t1.every(w => t2.includes(w));
+            const isSubset2 = t2.every(w => t1.includes(w));
+            if (isSubset1 || isSubset2) return true;
+        }
+        return false;
+    };
 
     files.forEach(f => {
       if (f.status === 'completed' && f.data) {
         if (f.data.entities && Array.isArray(f.data.entities)) {
           f.data.entities.forEach((entity: any) => {
-            // Clean/normalize keys
-            const rawCpf = entity.cpf || entity.cpf_requerente || '';
-            const rawName = entity.nome || entity.nome_requerente || '';
-            const cpf = String(rawCpf).replace(/[^\d]/g, '');
+            const newEntity = { ...entity, _source_document_type: f.documentType };
+            const incomingCpf = String(newEntity.cpf || newEntity.cpf_requerente || '').replace(/[^\d]/g, '');
+            const incomingName = newEntity.nome || newEntity.nome_requerente || '';
+            const incomingIsCertidao = String(f.documentType || '').toLowerCase().includes('certidao') || String(f.documentType || '').toLowerCase().includes('certidão');
 
-            // Generate a normalization key. Use Name if CPF is completely missing.
-            let key = '';
-            if (cpf) {
-                key = `cpf_${cpf}`;
-            } else if (rawName) {
-                // simple normalization for keying
-                const normalizedName = String(rawName)
-                    .toLowerCase()
-                    .normalize('NFD')
-                    .replace(/[\u0300-\u036f]/g, '')
-                    .replace(/[^a-z0-9]/g, '');
-                if (normalizedName) {
-                    key = `name_${normalizedName}`;
+            let matchedIdx = -1;
+            for (let i = 0; i < mergedEntities.length; i++) {
+                const existing = mergedEntities[i];
+                const existingCpf = String(existing.cpf || existing.cpf_requerente || '').replace(/[^\d]/g, '');
+                const existingName = existing.nome || existing.nome_requerente || '';
+
+                if (incomingCpf && existingCpf && incomingCpf === existingCpf) {
+                    matchedIdx = i;
+                    break;
+                }
+
+                if ((!incomingCpf || !existingCpf) && incomingName && existingName) {
+                    if (isNameCompatible(incomingName, existingName)) {
+                        const mae1 = newEntity.filiacao_mae || '';
+                        const mae2 = existing.filiacao_mae || '';
+                        if (mae1 && mae2) {
+                             if (isNameCompatible(mae1, mae2)) {
+                                 matchedIdx = i;
+                                 break;
+                             }
+                        } else {
+                            matchedIdx = i;
+                            break;
+                        }
+                    }
                 }
             }
 
-            // If we have a valid key (it has a CPF or a Name), we merge it.
-            // Otherwise, we filter it out (rogue empty entity).
-            if (key) {
-                if (entityMap.has(key)) {
-                    // Deep merge properties
-                    const existingEntity = entityMap.get(key);
-                    entityMap.set(key, { ...existingEntity, ...entity });
-                } else {
-                    entityMap.set(key, { ...entity });
+            if (matchedIdx === -1) {
+                // If it has at least a CPF or a Name, add it
+                if (incomingCpf || incomingName) {
+                    mergedEntities.push({ ...newEntity });
+                }
+            } else {
+                const existing = mergedEntities[matchedIdx];
+                const existingIsCertidao = String(existing._source_document_type || '').toLowerCase().includes('certidao') || String(existing._source_document_type || '').toLowerCase().includes('certidão');
+
+                const forceOverwrite = incomingIsCertidao && !existingIsCertidao;
+                const protectExisting = existingIsCertidao && !incomingIsCertidao;
+
+                for (const key of Object.keys(newEntity)) {
+                    const v = newEntity[key];
+                    if (v !== null && v !== undefined && v !== '') {
+                        if (forceOverwrite) {
+                            existing[key] = v;
+                        } else if (protectExisting) {
+                            if (existing[key] === null || existing[key] === undefined || existing[key] === '') {
+                                existing[key] = v;
+                            }
+                        } else {
+                            if (key === 'nome' && existing.nome) {
+                                if (String(v).length > String(existing.nome).length) {
+                                    existing[key] = v;
+                                }
+                            } else {
+                                existing[key] = v;
+                            }
+                        }
+                    }
+                }
+
+                if (incomingIsCertidao) {
+                    existing._source_document_type = 'Certidão (Merged)';
                 }
             }
           });
@@ -98,8 +153,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
       }
     });
 
-    if (entityMap.size > 0) {
-        unifiedData.entities = Array.from(entityMap.values());
+    if (mergedEntities.length > 0) {
+        unifiedData.entities = mergedEntities;
     }
 
     onDataExtracted(Object.keys(unifiedData).length > 0 ? unifiedData : null);
