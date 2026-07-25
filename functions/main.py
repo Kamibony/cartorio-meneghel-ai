@@ -260,15 +260,10 @@ def format_draft(req: https_fn.Request) -> https_fn.Response:
         from google.genai import types
 
         # Initialize the Gemini client
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            return https_fn.Response(
-                json.dumps({"error": "Gemini API key not configured"}),
-                status=500,
-                content_type="application/json"
-            )
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(vertexai=True, project=project_id, location=location)
 
         prompt = f"""
 <TASK>

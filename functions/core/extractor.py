@@ -98,6 +98,14 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
 
             # Non-destructively track sources
             sources = list(existing.get("sources", []))
+
+            # Merge incoming array of sources if present
+            incoming_sources = entity.get("sources", [])
+            if isinstance(incoming_sources, list):
+                for src in incoming_sources:
+                    if src not in sources:
+                        sources.append(src)
+
             incoming_doc_type = entity.get("_source_document_type", "")
 
             # Evaluate existing certidao state BEFORE modifying sources list
@@ -233,6 +241,10 @@ class DocumentExtractor:
 
             try:
                 data = json.loads(raw_text)
+                doc_type = data.get("document_type", "Desconhecido")
+                if "entities" in data and isinstance(data["entities"], list):
+                    for ent in data["entities"]:
+                        ent["_source_document_type"] = doc_type
                 return data
             except json.JSONDecodeError as je:
                 raise ValueError(f"Failed to parse JSON response from AI model. Raw text: {raw_text[:200]}...") from je
@@ -343,7 +355,10 @@ class DocumentExtractor:
 
             try:
                 data = json.loads(raw_text)
+                doc_type = data.get("document_type", "Desconhecido")
                 if "entities" in data and isinstance(data["entities"], list):
+                    for ent in data["entities"]:
+                        ent["_source_document_type"] = doc_type
                     data["entities"] = deduplicate_entities(data["entities"])
                 return data
             except json.JSONDecodeError as je:
