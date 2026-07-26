@@ -531,7 +531,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
             <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
               <div className="flex">
                 <div className="ml-3">
-                  <p className="text-sm text-red-700 font-bold">Server Error</p>
+                  <p className="text-sm text-red-700 font-bold">Erro no Servidor</p>
                   <p className="text-sm text-red-600 mt-1">{serverError}</p>
                 </div>
               </div>
@@ -589,19 +589,40 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                           <div className="flex justify-between items-start mb-3">
                             <div>
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeColor} mb-2`}>
-                                {error.category.replace('_', ' ')}
+                                {error.category === 'VALUE_MISMATCH' ? 'DIVERGÊNCIA DE VALOR' :
+                                 error.category === 'MISSING_FIELD' ? 'CAMPO AUSENTE' :
+                                 error.category === 'UNMATCHED_ENTITY' ? 'ENTIDADE NÃO ENCONTRADA' :
+                                 (error.category as string).replace('_', ' ')}
                               </span>
                               <h4 className="text-sm font-bold text-gray-900 uppercase">
                                 {(() => {
+                                  const fieldLabels: Record<string, string> = {
+                                    "nome": "Nome",
+                                    "cpf": "CPF",
+                                    "rg": "RG",
+                                    "orgao_emissor_rg": "Órgão Emissor do RG",
+                                    "data_nascimento": "Data de Nascimento",
+                                    "estado_civil": "Estado Civil",
+                                    "filiacao_mae": "Filiação (Mãe)",
+                                    "filiacao_pai": "Filiação (Pai)",
+                                    "naturalidade": "Naturalidade",
+                                    "nacionalidade": "Nacionalidade",
+                                    "profissao": "Profissão",
+                                    "endereco": "Endereço",
+                                    "regime_bens": "Regime de Bens"
+                                  };
+
                                   if (error.entity_name) {
-                                     const attribute = error.field.split('.').pop() || '';
+                                     const rawAttribute = error.field.split('.').pop() || '';
+                                     const attribute = fieldLabels[rawAttribute] || rawAttribute;
                                      return `${error.entity_name} - ${attribute}`;
                                   }
 
                                   const entityMatch = error.field.match(/^entities\[(\d+)\]\.(.*)/);
                                   if (entityMatch) {
                                     const index = parseInt(entityMatch[1]);
-                                    const attribute = entityMatch[2];
+                                    const rawAttribute = entityMatch[2];
+                                    const attribute = fieldLabels[rawAttribute] || rawAttribute;
                                     return `ENTIDADE ${index + 1} - ${attribute}`;
                                   }
 
