@@ -47,6 +47,15 @@ class Discrepancy:
 
 class DataNormalizer:
     @staticmethod
+    def normalize_cpf_cnpj(text: str) -> str:
+        """Strip all non-numeric characters for CPF/CNPJ."""
+        if not text:
+            return ""
+        if not isinstance(text, str):
+            text = str(text)
+        return re.sub(r'[^0-9]', '', text)
+
+    @staticmethod
     def normalize_digits(text: str) -> str:
         """Strip all non-numeric characters (keeps X/x for RG)."""
         if not text:
@@ -102,6 +111,7 @@ class DataNormalizer:
         return text
 
 # Backwards compatibility aliases
+normalize_cpf_cnpj = DataNormalizer.normalize_cpf_cnpj
 normalize_digits = DataNormalizer.normalize_digits
 normalize_string = DataNormalizer.normalize_string
 normalize_date = DataNormalizer.normalize_date
@@ -188,8 +198,19 @@ class DocumentValidator:
 
             if error.category == "VALUE_MISMATCH":
                 # Normalize values to check for false positive mismatches (case, accent, gender suffix)
-                norm_expected = normalize_string(error.expected)
-                norm_found = normalize_string(error.found_in_text)
+                field_base = error.field.split('.')[-1]
+                if field_base == "cpf":
+                    norm_expected = normalize_cpf_cnpj(error.expected)
+                    norm_found = normalize_cpf_cnpj(error.found_in_text)
+                elif field_base == "rg":
+                    norm_expected = normalize_digits(error.expected)
+                    norm_found = normalize_digits(error.found_in_text)
+                elif field_base in ["data_nascimento", "data_obito"]:
+                    norm_expected = normalize_date(error.expected)
+                    norm_found = normalize_date(error.found_in_text)
+                else:
+                    norm_expected = normalize_string(error.expected)
+                    norm_found = normalize_string(error.found_in_text)
 
                 if norm_expected == norm_found and norm_expected != "":
                     logger.warning(f"False positive filtered: '{error.expected}' vs '{error.found_in_text}' resolved to '{norm_expected}'.")
