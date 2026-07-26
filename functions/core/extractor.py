@@ -552,10 +552,10 @@ class DocumentExtractor:
                     if expected_val in (None, ""):
                         continue
 
-                    # Check if entity came from CIN
-                    has_cin_source = any("cin" in src.lower() or "carteira de identidade nacional" in src.lower() for src in gt_sources_by_cpf.get(gt_cpf, []))
-                    # New ID format (CIN) uses CPF instead of RG
-                    if key == "rg" and has_cin_source and gt_cpf:
+                    # CIN Pruning Logic:
+                    # New ID format (CIN) uses CPF instead of RG.
+                    gt_rg = DataNormalizer.normalize_digits(gt_ent.get("rg", ""))
+                    if key in ["rg", "orgao_emissor_rg"] and gt_cpf and gt_rg and gt_cpf == gt_rg:
                         continue
 
                     draft_val = matched_draft_ent.get(key)
@@ -572,8 +572,18 @@ class DocumentExtractor:
                             "requires_human_review": False
                         })
                     else:
-                        norm_expected = DataNormalizer.normalize_string(str(expected_val))
-                        norm_draft = DataNormalizer.normalize_string(str(draft_val))
+                        if key == "cpf":
+                            norm_expected = DataNormalizer.normalize_cpf_cnpj(str(expected_val))
+                            norm_draft = DataNormalizer.normalize_cpf_cnpj(str(draft_val))
+                        elif key == "rg":
+                            norm_expected = DataNormalizer.normalize_digits(str(expected_val))
+                            norm_draft = DataNormalizer.normalize_digits(str(draft_val))
+                        elif key in ["data_nascimento", "data_obito"]:
+                            norm_expected = DataNormalizer.normalize_date(str(expected_val))
+                            norm_draft = DataNormalizer.normalize_date(str(draft_val))
+                        else:
+                            norm_expected = DataNormalizer.normalize_string(str(expected_val))
+                            norm_draft = DataNormalizer.normalize_string(str(draft_val))
 
                         if norm_expected != norm_draft:
                             # Try to extract the exact substring from the raw draft text
