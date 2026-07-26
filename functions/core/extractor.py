@@ -21,6 +21,8 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
     hierarchy = {
         "Certidão de Casamento": 100,
         "Certidão de Nascimento": 90,
+        "CIN": 60,
+        "Carteira de Identidade Nacional": 60,
         "CNH": 50,
         "RG": 40,
         "Desconhecido": 0
@@ -481,6 +483,28 @@ class DocumentExtractor:
                 clean_entity = {k: v for k, v in entity.items() if k in CORE_IDENTITY_FIELDS}
                 gt_entities.append(clean_entity)
 
+            # Store sources for CIN check
+            gt_sources_by_cpf = {}
+            for entity in merged_gt_entities:
+                cpf = DataNormalizer.normalize_digits(entity.get("cpf", ""))
+                if cpf:
+                    gt_sources_by_cpf[cpf] = entity.get("sources", [])
+
+            field_labels = {
+                "nome": "Nome",
+                "cpf": "CPF",
+                "rg": "RG",
+                "orgao_emissor_rg": "Órgão Emissor do RG",
+                "data_nascimento": "Data de Nascimento",
+                "estado_civil": "Estado Civil",
+                "filiacao_mae": "Filiação (Mãe)",
+                "filiacao_pai": "Filiação (Pai)",
+                "naturalidade": "Naturalidade",
+                "nacionalidade": "Nacionalidade",
+                "profissao": "Profissão",
+                "endereco": "Endereço",
+                "regime_bens": "Regime de Bens"
+            }
             discrepancies = []
 
             # Create lookup dictionaries for draft entities (by CPF)
@@ -511,10 +535,11 @@ class DocumentExtractor:
 
                 if not matched_draft_ent:
                     # Entity entirely missing from draft
+                    nome_entidade = gt_ent.get('nome', 'Desconhecido')
                     discrepancies.append({
                         "field": f"entities[{i}]",
                         "category": "UNMATCHED_ENTITY",
-                        "message": f"Entity '{gt_ent.get('nome', 'Unknown')}' not found in the draft document.",
+                        "message": f"Entidade '{nome_entidade}' não encontrada na minuta do documento.",
                         "expected": gt_ent.get("nome", ""),
                         "found_in_text": None,
                         "requires_human_review": False
@@ -527,14 +552,21 @@ class DocumentExtractor:
                     if expected_val in (None, ""):
                         continue
 
+                    # Check if entity came from CIN
+                    has_cin_source = any("cin" in src.lower() or "carteira de identidade nacional" in src.lower() for src in gt_sources_by_cpf.get(gt_cpf, []))
+                    # New ID format (CIN) uses CPF instead of RG
+                    if key == "rg" and has_cin_source and gt_cpf:
+                        continue
+
                     draft_val = matched_draft_ent.get(key)
                     field_path = f"entities[{i}].{key}"
+                    label_key = field_labels.get(key, key)
 
                     if draft_val in (None, ""):
                         discrepancies.append({
                             "field": field_path,
                             "category": "MISSING_FIELD",
-                            "message": f"Expected '{key}' is missing in the draft.",
+                            "message": f"O campo esperado '{label_key}' está ausente na minuta.",
                             "expected": str(expected_val),
                             "found_in_text": None,
                             "requires_human_review": False
@@ -559,7 +591,7 @@ class DocumentExtractor:
                             discrepancies.append({
                                 "field": field_path,
                                 "category": "VALUE_MISMATCH",
-                                "message": f"Value mismatch for '{key}'. Expected '{expected_val}', found '{draft_val}'.",
+                                "message": f"Divergência de valor para '{label_key}'. Esperado '{expected_val}', encontrado '{draft_val}'.",
                                 "expected": str(expected_val),
                                 "found": str(draft_val),
                                 "found_in_text": exact_substring,
