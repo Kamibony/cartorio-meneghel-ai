@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
+import { ENV } from '../config/env';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 interface DocumentViewerProps {
@@ -49,166 +50,66 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     setGlobalError(null);
 
     const unifiedData: any = {};
-    const mergedEntities: any[] = [];
 
-    const isNameCompatible = (n1: string, n2: string) => {
-        if (!n1 || !n2) return false;
-        const norm1 = String(n1).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
-        const norm2 = String(n2).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+    const processMerge = async () => {
+        const allEntities: any[] = [];
 
-        const stopwords = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
-        const t1 = norm1.split(' ').filter(w => !stopwords.has(w));
-        const t2 = norm2.split(' ').filter(w => !stopwords.has(w));
+        files.forEach(f => {
+            if (f.status === 'completed' && f.data) {
+                if (f.data.entities && Array.isArray(f.data.entities)) {
+                    f.data.entities.forEach((entity: any) => {
+                        allEntities.push({ ...entity, _source_document_type: f.documentType });
+                    });
+                }
+                for (const key in f.data) {
+                    if (key !== 'entities') {
+                        unifiedData[key] = f.data[key];
+                    }
+                }
+            }
+        });
 
-        if (t1.length > 0 && t2.length > 0) {
-            const isSubset1 = t1.every(w => t2.includes(w));
-            const isSubset2 = t2.every(w => t1.includes(w));
-            if (isSubset1 || isSubset2) return true;
+        if (allEntities.length === 0) {
+            onDataExtracted(Object.keys(unifiedData).length > 0 ? unifiedData : null);
+            return;
         }
-        return false;
+
+        try {
+            const apiUrl = ENV.apiUrl;
+            const endpoint = `${apiUrl}/merge_entities`;
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ entities: allEntities }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Falha ao mesclar entidades.');
+            }
+
+            const data = await response.json();
+            if (data.entities) {
+                unifiedData.entities = data.entities;
+            }
+            onDataExtracted(unifiedData);
+        } catch (err: any) {
+            console.error('Merge error:', err);
+            setGlobalError("Atenção: Falha ao consolidar os documentos. " + (err.message || ''));
+            onDataExtracted(null);
+        }
     };
 
-    files.forEach(f => {
-      if (f.status === 'completed' && f.data) {
-        if (f.data.entities && Array.isArray(f.data.entities)) {
-          f.data.entities.forEach((entity: any) => {
-            const newEntity = { ...entity, _source_document_type: f.documentType };
-            const incomingCpf = String(newEntity.cpf || newEntity.cpf_requerente || '').replace(/[^\d]/g, '');
-            const incomingName = newEntity.nome || newEntity.nome_requerente || '';
-            const incomingIsCertidao = String(f.documentType || '').toLowerCase().includes('certidao') || String(f.documentType || '').toLowerCase().includes('certidão');
-
-            let matchedIdx = -1;
-            for (let i = 0; i < mergedEntities.length; i++) {
-                const existing = mergedEntities[i];
-                const existingCpf = String(existing.cpf || existing.cpf_requerente || '').replace(/[^\d]/g, '');
-                const existingName = existing.nome || existing.nome_requerente || '';
-
-                if (incomingCpf && existingCpf && incomingCpf === existingCpf) {
-                    matchedIdx = i;
-                    break;
-                }
-
-                if ((!incomingCpf || !existingCpf) && incomingName && existingName) {
-                    if (isNameCompatible(incomingName, existingName)) {
-                        const mae1 = newEntity.filiacao_mae || '';
-                        const mae2 = existing.filiacao_mae || '';
-                        if (mae1 && mae2) {
-                             if (isNameCompatible(mae1, mae2)) {
-                                 matchedIdx = i;
-                                 break;
-                             }
-                        } else {
-                            matchedIdx = i;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (matchedIdx === -1) {
-                // If it has at least a CPF or a Name, add it
-                if (incomingCpf || incomingName) {
-                    mergedEntities.push({ ...newEntity });
-                }
-            } else {
-                const existing = mergedEntities[matchedIdx];
-                const existingIsCertidao = String(existing._source_document_type || '').toLowerCase().includes('certidao') || String(existing._source_document_type || '').toLowerCase().includes('certidão');
-
-                const forceOverwrite = incomingIsCertidao && !existingIsCertidao;
-                const protectExisting = existingIsCertidao && !incomingIsCertidao;
-
-                for (const key of Object.keys(newEntity)) {
-                    const v = newEntity[key];
-                    if (v !== null && v !== undefined && v !== '') {
-                        const skipKeys = ['_source_document_type', 'sources', 'has_marriage_certificate', '_conflicts', '_resolved_conflicts'];
-                        if (!skipKeys.includes(key)) {
-                            const existingVal = existing[key];
-                            if (existingVal !== null && existingVal !== undefined && existingVal !== '') {
-                                const normV = String(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-                                const normE = String(existingVal).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-
-                                if (normV !== normE && (key !== 'nome' || (key === 'nome' && !normV.includes(normE) && !normE.includes(normV)))) {
-                                    if (!existing._conflicts) existing._conflicts = {};
-                                    if (!existing._conflicts[key]) {
-                                        existing._conflicts[key] = {
-                                            options: [
-                                                { value: existingVal, source: existing._source_document_type },
-                                                { value: v, source: f.documentType }
-                                            ]
-                                        };
-                                    } else {
-                                        // add if not present
-                                        const found = existing._conflicts[key].options.some((opt: any) => opt.value === v);
-                                        if (!found) {
-                                            existing._conflicts[key].options.push({ value: v, source: f.documentType });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (forceOverwrite) {
-                            existing[key] = v;
-                        } else if (protectExisting) {
-                            if (existing[key] === null || existing[key] === undefined || existing[key] === '') {
-                                existing[key] = v;
-                            }
-                        } else {
-                            if (key === 'nome' && existing.nome) {
-                                if (String(v).length > String(existing.nome).length) {
-                                    existing[key] = v;
-                                }
-                            } else {
-                                existing[key] = v;
-                            }
-                        }
-                    }
-                }
-
-                if (incomingIsCertidao) {
-                    existing._source_document_type = 'Certidão (Merged)';
-                }
-                if (newEntity.has_marriage_certificate) {
-                     existing.has_marriage_certificate = true;
-                }
-            }
-          });
-        }
-
-        for (const key in f.data) {
-          if (key !== 'entities') {
-            unifiedData[key] = f.data[key];
-          }
-        }
-      }
-    });
-
-    for (const existing of mergedEntities) {
-        if (existing.has_marriage_certificate) {
-            // Apply domain logic override if it doesn't have an explicit user resolution
-            if (!existing._resolved_conflicts || !existing._resolved_conflicts.includes('estado_civil')) {
-                if (existing.estado_civil && existing.estado_civil !== 'Casado(a)') {
-                     if (!existing._conflicts) existing._conflicts = {};
-                     if (!existing._conflicts['estado_civil']) {
-                         existing._conflicts['estado_civil'] = {
-                             options: [
-                                 { value: existing.estado_civil, source: existing._source_document_type },
-                                 { value: 'Casado(a)', source: 'Certidão de Casamento' }
-                             ]
-                         };
-                     }
-                }
-                existing.estado_civil = 'Casado(a)';
-            }
-        }
+    const isAnyProcessing = files.some(f => f.status === 'uploading' || f.status === 'extracting' || f.status === 'pending');
+    if (!isAnyProcessing) {
+        processMerge();
     }
 
-    if (mergedEntities.length > 0) {
-        unifiedData.entities = mergedEntities;
-    }
-
-    onDataExtracted(Object.keys(unifiedData).length > 0 ? unifiedData : null);
+    // We don't call onDataExtracted synchronously anymore, so we just return.
+    return;
   }, [files, onDataExtracted]);
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {

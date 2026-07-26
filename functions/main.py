@@ -224,6 +224,53 @@ def api_status(req: https_fn.Request) -> https_fn.Response:
         content_type="application/json"
     )
 
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def merge_entities(req: https_fn.Request) -> https_fn.Response:
+    """
+    Merges an array of entities using the backend Master Truth Profile engine.
+    Accepts POST requests with JSON payload: {"entities": [...]}
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    try:
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Missing JSON payload"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        entities = data.get("entities")
+
+        if not entities or not isinstance(entities, list):
+            return https_fn.Response(
+                json.dumps({"error": "Missing or invalid entities (must be a list)"}),
+                status=400,
+                content_type="application/json"
+            )
+
+        from core.extractor import deduplicate_entities
+        merged_entities = deduplicate_entities(entities)
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "entities": merged_entities}),
+            status=200,
+            content_type="application/json"
+        )
+    except Exception as e:
+        logger.error("Error in merge_entities", exc_info=True)
+        return https_fn.Response(
+            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            status=500,
+            content_type="application/json"
+        )
+
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
 def format_draft(req: https_fn.Request) -> https_fn.Response:
     """

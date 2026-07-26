@@ -40,6 +40,10 @@
         "function": "format_draft"
       },
       {
+        "source": "/api/merge_entities",
+        "function": "merge_entities"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
