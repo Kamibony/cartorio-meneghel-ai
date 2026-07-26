@@ -62,8 +62,12 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
             existing_entity[key] = incoming_val
             continue
 
-        norm_incoming = DataNormalizer.normalize_string(incoming_val)
-        norm_existing = DataNormalizer.normalize_string(existing_val)
+        if key in ["cpf", "rg"]:
+            norm_incoming = DataNormalizer.normalize_digits(incoming_val)
+            norm_existing = DataNormalizer.normalize_digits(existing_val)
+        else:
+            norm_incoming = DataNormalizer.normalize_string(incoming_val)
+            norm_existing = DataNormalizer.normalize_string(existing_val)
 
         if norm_incoming != norm_existing:
             # Special logic for names (substring match allows keeping the longest)

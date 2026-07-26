@@ -63,17 +63,17 @@ class DataNormalizer:
             text = str(text)
         text = text.upper()
 
-        # Strip gender suffixes like (A) or (O/A)
+        # Strip gender suffixes like (A) or (O/A) BEFORE word stemming
         text = re.sub(r'\([AO](/[AO])?\)', '', text)
+
+        # Strip accents FIRST, before word matching for safety
+        text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
         # Normalize common gendered terms to masculine/base form
         text = re.sub(r'\b(BRASILEIR|SOLTEIR|CASAD|DIVORCIAD|VIUV|SEPARAD)[AO]S?\b', r'\1O', text)
 
-        # Standardize state abbreviations (e.g., JOAO PESSOA/PB -> JOAO PESSOA - PB)
-        text = re.sub(r'/([A-Z]{2})$', r' - \1', text)
-
-        # Strip accents
-        text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+        # Standardize state abbreviations (e.g., JOAO PESSOA/PB, JOAO PESSOA - PB, JOAO PESSOA, PB)
+        text = re.sub(r'[\s,\-/\\]+([A-Z]{2})$', r' \1', text)
 
         # Remove extra spaces
         return re.sub(r'\s+', ' ', text).strip()
