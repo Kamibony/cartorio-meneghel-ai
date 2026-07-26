@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 CORE_IDENTITY_FIELDS = {
     "nome", "cpf", "rg", "orgao_emissor_rg", "data_nascimento",
     "estado_civil", "filiacao_mae", "filiacao_pai", "naturalidade",
-    "nacionalidade", "profissao", "endereco", "regime_bens"
+    "nacionalidade", "profissao", "endereco", "regime_bens",
+    "matricula", "data_obito", "aliquota_itcd"
 }
 
 
