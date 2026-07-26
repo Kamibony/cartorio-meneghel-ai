@@ -10,27 +10,132 @@ logger = logging.getLogger(__name__)
 
 _semaphore = threading.Semaphore(3)
 
+def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> dict:
+    """
+    Intelligently merges an incoming entity into an existing entity to build the Master Truth Profile.
+    Applies hierarchy rules (e.g. Certidão > RG) to auto-resolve safe conflicts silently, while surfacing hard factual anomalies.
+    """
+    from core.validator import DataNormalizer
+
+    # Document Hierarchy Weights (higher = more authoritative)
+    hierarchy = {
+        "Certidão de Casamento": 100,
+        "Certidão de Nascimento": 90,
+        "CNH": 50,
+        "RG": 40,
+        "Desconhecido": 0
+    }
+
+    incoming_type = incoming_entity.get("_source_document_type", "Desconhecido")
+    # Clean it up a bit for matching
+    base_incoming_type = "Desconhecido"
+    for h_key in hierarchy:
+        if h_key.lower() in incoming_type.lower():
+            base_incoming_type = h_key
+            break
+
+    incoming_weight = hierarchy.get(base_incoming_type, 0)
+
+    # Determine the existing document's weight based on its tracked sources
+    existing_sources = existing_entity.get("sources", [])
+    max_existing_weight = 0
+    primary_existing_source = "Desconhecido"
+
+    for src in existing_sources:
+        for h_key in hierarchy:
+            if h_key.lower() in src.lower():
+                weight = hierarchy.get(h_key, 0)
+                if weight > max_existing_weight:
+                    max_existing_weight = weight
+                    primary_existing_source = src
+
+    for key, incoming_val in incoming_entity.items():
+        if key in ["_source_document_type", "sources", "_conflicts", "_resolved_conflicts"]:
+            continue
+
+        if incoming_val in (None, ""):
+            continue
+
+        existing_val = existing_entity.get(key)
+
+        if existing_val in (None, ""):
+            existing_entity[key] = incoming_val
+            continue
+
+        norm_incoming = DataNormalizer.normalize_string(incoming_val)
+        norm_existing = DataNormalizer.normalize_string(existing_val)
+
+        if norm_incoming != norm_existing:
+            # Special logic for names (substring match allows keeping the longest)
+            if key == "nome" and (norm_incoming in norm_existing or norm_existing in norm_incoming):
+                if len(str(incoming_val)) > len(str(existing_val)):
+                    existing_entity[key] = incoming_val
+                continue
+
+            # Immutable Data Check: Force Hard Conflict regardless of hierarchy
+            immutable_fields = {"cpf", "data_nascimento", "filiacao_mae", "filiacao_pai"}
+
+            if key not in immutable_fields:
+                # Conflict handling
+                # 1. Safe Automated Override: Strict Hierarchy Win
+                if incoming_weight > max_existing_weight:
+                    # Incoming wins
+                    existing_entity[key] = incoming_val
+                    if "_resolved_conflicts" not in existing_entity:
+                        existing_entity["_resolved_conflicts"] = []
+                    if key not in existing_entity["_resolved_conflicts"]:
+                        existing_entity["_resolved_conflicts"].append(key)
+                    continue
+
+                elif max_existing_weight > incoming_weight:
+                    # Existing wins, silent log
+                    if "_resolved_conflicts" not in existing_entity:
+                        existing_entity["_resolved_conflicts"] = []
+                    if key not in existing_entity["_resolved_conflicts"]:
+                        existing_entity["_resolved_conflicts"].append(key)
+                    continue
+
+            # 2. Hard Conflict: Same tier, unresolvable, or IMMUTABLE data mismatch
+            if "_conflicts" not in existing_entity:
+                existing_entity["_conflicts"] = {}
+
+            if key not in existing_entity["_conflicts"]:
+                existing_entity["_conflicts"][key] = {
+                    "options": [
+                        {"value": existing_val, "source": primary_existing_source},
+                        {"value": incoming_val, "source": incoming_type}
+                    ]
+                }
+            else:
+                # Add to existing conflicts if not already there
+                options = existing_entity["_conflicts"][key]["options"]
+                if not any(opt.get("value") == incoming_val for opt in options):
+                    options.append({"value": incoming_val, "source": incoming_type})
+
+    # Track sources non-destructively
+    if incoming_type and incoming_type not in existing_sources:
+        existing_sources.append(incoming_type)
+        existing_entity["sources"] = existing_sources
+
+    return existing_entity
+
 def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
     """
-    Deterministically deduplicates and merges entities across documents.
+    Deterministically deduplicates and merges entities across documents to build a Master Truth Profile.
     Uses O(N^2) pairwise comparison to allow matching when CPFs are missing (e.g. Certidoes vs RG).
     Matches by CPF first, falling back to Normalized Name (with prefix/substring match) + non-conflicting Filiacao Mae.
-    Enforces the Universal Legal Hierarchy Rule: 'Certidão' data strictly overwrites others.
     """
-    from core.validator import normalize_digits, normalize_string
-
-    def is_certidao(doc_type_str):
-        return doc_type_str and "certid" in str(doc_type_str).lower()
+    from core.validator import DataNormalizer
 
     def do_entities_match(ent1, ent2):
-        cpf1 = normalize_digits(ent1.get("cpf", ""))
-        cpf2 = normalize_digits(ent2.get("cpf", ""))
+        cpf1 = DataNormalizer.normalize_digits(ent1.get("cpf", ""))
+        cpf2 = DataNormalizer.normalize_digits(ent2.get("cpf", ""))
 
         if cpf1 and cpf2 and cpf1 == cpf2:
             return True
 
-        nome1 = normalize_string(ent1.get("nome", ""))
-        nome2 = normalize_string(ent2.get("nome", ""))
+        nome1 = DataNormalizer.normalize_string(ent1.get("nome", ""))
+        nome2 = DataNormalizer.normalize_string(ent2.get("nome", ""))
 
         def is_name_compatible(n1, n2):
             if not n1 or not n2:
@@ -49,8 +154,8 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
             # Check for prefix or substring match (e.g. BIANCA AGUIAR SANTOS vs BIANCA AGUIAR SANTOS DANTAS)
             if is_name_compatible(nome1, nome2):
                 # Need to check mother's name to avoid false positives (e.g. siblings)
-                mae1 = normalize_string(ent1.get("filiacao_mae", ""))
-                mae2 = normalize_string(ent2.get("filiacao_mae", ""))
+                mae1 = DataNormalizer.normalize_string(ent1.get("filiacao_mae", ""))
+                mae2 = DataNormalizer.normalize_string(ent2.get("filiacao_mae", ""))
 
                 # If both have a mother's name, they must match or one must be a substring
                 if mae1 and mae2:
@@ -90,101 +195,35 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
             new_ent["sources"] = current_sources
             merged_entities.append(new_ent)
         else:
-            # Matched, perform merge
+            # Matched, perform intelligent merge using the hierarchy rules
             existing = merged_entities[matched_idx]
 
-            # Non-destructively track sources
-            sources = list(existing.get("sources", []))
+            # Pass document type to merge function
+            incoming_type = entity.get("_source_document_type", "")
+            if incoming_type:
+                entity["_source_document_type"] = incoming_type
 
-            # Merge incoming array of sources if present
-            incoming_sources = entity.get("sources", [])
-            if isinstance(incoming_sources, list):
-                for src in incoming_sources:
-                    if src not in sources:
-                        sources.append(src)
+            merged_entities[matched_idx] = merge_into_master_profile(existing, entity)
 
-            incoming_doc_type = entity.get("_source_document_type", "")
-
-            # Evaluate existing certidao state BEFORE modifying sources list
-            existing_is_cert = any(is_certidao(src) for src in sources)
-
-            if incoming_doc_type and incoming_doc_type not in sources:
-                sources.append(incoming_doc_type)
-            existing["sources"] = sources
-
-            # Refactored boolean flag override
-            if entity.get("has_marriage_certificate"):
-                existing["has_marriage_certificate"] = True
-
-            # Universal Legal Hierarchy Rule Check
-            incoming_is_cert = is_certidao(incoming_doc_type)
-
-            # If the incoming document is a Certidão and the existing is NOT,
-            # the Certidão's fields unconditionally overwrite conflicting fields.
-            force_overwrite = incoming_is_cert and not existing_is_cert
-
-            # If the existing document is a Certidão and the incoming is NOT,
-            # the Certidão's fields cannot be overwritten by the incoming.
-            protect_existing = existing_is_cert and not incoming_is_cert
-
-            for k, v in entity.items():
-                skip_keys = {"_source_document_type", "sources", "has_marriage_certificate", "_conflicts", "_resolved_conflicts"}
-                if k in skip_keys:
-                    continue
-                if v not in (None, ""):
-                    # Conflict detection
-                    existing_val = existing.get(k)
-                    if existing_val not in (None, ""):
-                        norm_v = normalize_string(str(v))
-                        norm_e = normalize_string(str(existing_val))
-
-                        if norm_v != norm_e and not (k == "nome" and (norm_v in norm_e or norm_e in norm_v)):
-                            if "_conflicts" not in existing:
-                                existing["_conflicts"] = {}
-                            if k not in existing["_conflicts"]:
-                                existing["_conflicts"][k] = {
-                                    "options": [
-                                        {"value": existing_val, "source": existing.get("_source_document_type", "Desconhecido")},
-                                        {"value": v, "source": incoming_doc_type}
-                                    ]
-                                }
-                            else:
-                                found = any(opt.get("value") == v for opt in existing["_conflicts"][k]["options"])
-                                if not found:
-                                    existing["_conflicts"][k]["options"].append({"value": v, "source": incoming_doc_type})
-
-                    # ALWAYS prioritize the longest name string for names
-                    if k == "nome" and existing.get("nome"):
-                        if len(str(v)) > len(str(existing["nome"])):
-                            existing[k] = v
-                        continue
-
-                    if force_overwrite:
-                        existing[k] = v
-                    elif protect_existing:
-                        if existing.get(k) in (None, ""):
-                            # Only fill it in if the Certidao was missing it entirely
-                            existing[k] = v
-                    else:
-                        # Standard merge logic: newer non-empty value takes precedence
-                        existing[k] = v
-
+    # Final pass: Ensure "Casado(a)" is enforced if marriage cert exists and wasn't manually skipped
     for existing in merged_entities:
-        if existing.get("has_marriage_certificate"):
+        has_marriage_cert = any("casamento" in src.lower() for src in existing.get("sources", []))
+        if existing.get("has_marriage_certificate") or has_marriage_cert:
             resolved_conflicts = existing.get("_resolved_conflicts", [])
             if "estado_civil" not in resolved_conflicts:
                 existing_civil = existing.get("estado_civil")
-                if existing_civil and normalize_string(existing_civil) != normalize_string("Casado(a)"):
-                    if "_conflicts" not in existing:
-                        existing["_conflicts"] = {}
-                    if "estado_civil" not in existing["_conflicts"]:
-                        existing["_conflicts"]["estado_civil"] = {
-                            "options": [
-                                {"value": existing_civil, "source": existing.get("_source_document_type", "Desconhecido")},
-                                {"value": "Casado(a)", "source": "Certidão de Casamento"}
-                            ]
-                        }
-                existing["estado_civil"] = "Casado(a)"
+                # Even if we don't know existing, it should be Casado(a) if marriage cert present
+                if DataNormalizer.normalize_string(str(existing_civil)) != DataNormalizer.normalize_string("Casado(a)"):
+                    existing["estado_civil"] = "Casado(a)"
+                    if "_resolved_conflicts" not in existing:
+                        existing["_resolved_conflicts"] = []
+                    existing["_resolved_conflicts"].append("estado_civil")
+
+                    # Remove from conflicts if it was there
+                    if "_conflicts" in existing and "estado_civil" in existing["_conflicts"]:
+                        del existing["_conflicts"]["estado_civil"]
+                        if not existing["_conflicts"]:
+                            del existing["_conflicts"]
 
     return merged_entities
 
@@ -418,7 +457,7 @@ class DocumentExtractor:
         then performs a deterministic Python diff against the ground truth to find discrepancies.
         """
         import re
-        from core.validator import normalize_digits, normalize_string
+        from core.validator import DataNormalizer
 
         try:
             from core.validator import CORE_IDENTITY_FIELDS
@@ -443,14 +482,14 @@ class DocumentExtractor:
             # Create lookup dictionaries for draft entities (by CPF)
             draft_by_cpf = {}
             for draft_ent in draft_entities:
-                cpf = normalize_digits(draft_ent.get("cpf", ""))
+                cpf = DataNormalizer.normalize_digits(draft_ent.get("cpf", ""))
                 if cpf:
                     draft_by_cpf[cpf] = draft_ent
 
             # 2. Deterministic Diffing
             for i, gt_ent in enumerate(gt_entities):
-                gt_cpf = normalize_digits(gt_ent.get("cpf", ""))
-                gt_nome = normalize_string(gt_ent.get("nome", ""))
+                gt_cpf = DataNormalizer.normalize_digits(gt_ent.get("cpf", ""))
+                gt_nome = DataNormalizer.normalize_string(gt_ent.get("nome", ""))
 
                 # Find matching entity in draft
                 matched_draft_ent = None
@@ -461,7 +500,7 @@ class DocumentExtractor:
                     # E.g. Ground Truth has "BIANCA AGUIAR SANTOS DANTAS"
                     # Draft has "BIANCA AGUIAR SANTOS"
                     for draft_ent in draft_entities:
-                        draft_nome = normalize_string(draft_ent.get("nome", ""))
+                        draft_nome = DataNormalizer.normalize_string(draft_ent.get("nome", ""))
                         if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
                             matched_draft_ent = draft_ent
                             break
@@ -497,8 +536,8 @@ class DocumentExtractor:
                             "requires_human_review": False
                         })
                     else:
-                        norm_expected = normalize_string(str(expected_val))
-                        norm_draft = normalize_string(str(draft_val))
+                        norm_expected = DataNormalizer.normalize_string(str(expected_val))
+                        norm_draft = DataNormalizer.normalize_string(str(draft_val))
 
                         if norm_expected != norm_draft:
                             # Try to extract the exact substring from the raw draft text
