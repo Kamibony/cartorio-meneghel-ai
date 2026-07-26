@@ -41,10 +41,12 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [viewMode, setViewMode] = useState<'validation' | 'visual_review' | 'corrected'>('validation');
 
   const [resolvedGroundTruth, setResolvedGroundTruth] = useState<any>(null);
+  const [hasAcknowledgedGroundTruth, setHasAcknowledgedGroundTruth] = useState<boolean>(false);
 
   // Sync prop groundTruth to local state so we can mutate it upon resolution
   React.useEffect(() => {
      setResolvedGroundTruth(groundTruth ? JSON.parse(JSON.stringify(groundTruth)) : null);
+     setHasAcknowledgedGroundTruth(false);
   }, [groundTruth]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -255,7 +257,8 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
       <div className="p-4 flex-1 flex flex-col relative">
 
-        {hasUnresolvedConflicts() && (
+        {groundTruth && !hasAcknowledgedGroundTruth && (
+          hasUnresolvedConflicts() ? (
             <div className="mb-4 bg-orange-50 border-l-4 border-orange-400 p-4 rounded shadow-sm">
                 <div className="flex">
                     <div className="flex-shrink-0">
@@ -263,7 +266,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
                     </div>
-                    <div className="ml-3">
+                    <div className="ml-3 w-full">
                         <h3 className="text-sm font-medium text-orange-800">Conflito de Dados Detectado</h3>
                         <div className="mt-2 text-sm text-orange-700">
                             <p>Existem dados conflitantes entre os documentos enviados. Por favor, selecione o valor correto antes de prosseguir.</p>
@@ -293,6 +296,32 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                     </div>
                 </div>
             </div>
+          ) : (
+            <div className="mb-4 bg-green-50 border-l-4 border-green-500 p-4 rounded shadow-sm">
+              <div className="flex flex-col items-start h-full">
+                <div className="flex items-center mb-4">
+                  <div className="flex-shrink-0">
+                    <svg className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-green-800">Sucesso na Extração</h3>
+                    <p className="text-sm text-green-700 mt-1">
+                      Extração concluída. Todos os dados das fontes foram consolidados com sucesso (Nenhum conflito manual detectado).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHasAcknowledgedGroundTruth(true)}
+                  className="mt-2 ml-9 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  Prosseguir para Validação da Minuta
+                </button>
+              </div>
+            </div>
+          )
         )}
 
          {isProcessing && (
@@ -307,7 +336,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           </div>
         )}
 
-        {(!validationErrors && !serverError) && (
+        {(!groundTruth || hasAcknowledgedGroundTruth) && (!validationErrors && !serverError) && (
           <>
             {inputType === 'upload' ? (
               <div
@@ -426,7 +455,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                 const dmp = new diff_match_patch();
 
                 const diffWordMode = (text1: string, text2: string) => {
-                    const tokenize = (text: string) => text.match(/([\s]+|[\wÀ-ÿ]+|[^\s\wÀ-ÿ]+)/g) || [];
+                    const tokenize = (text: string) => text.match(/([\s]+|[\d][\d\.\-\/]*[\d]|[\wÀ-ÿ]+|[^\s\wÀ-ÿ]+)/g) || [];
                     const tokens1 = tokenize(text1);
                     const tokens2 = tokenize(text2);
 
