@@ -44,54 +44,66 @@ class Discrepancy:
         else:
             self.found_in_text = str(self.found_in_text)
 
-def normalize_digits(text: str) -> str:
-    """Strip all non-numeric characters (keeps X/x for RG)."""
-    if not isinstance(text, str):
-        text = str(text)
-    return re.sub(r'[^0-9X]', '', text.upper())
+class DataNormalizer:
+    @staticmethod
+    def normalize_digits(text: str) -> str:
+        """Strip all non-numeric characters (keeps X/x for RG)."""
+        if not text:
+            return ""
+        if not isinstance(text, str):
+            text = str(text)
+        return re.sub(r'[^0-9X]', '', text.upper())
 
-def normalize_string(text: str) -> str:
-    """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
-    if not isinstance(text, str):
-        text = str(text)
-    text = text.upper()
+    @staticmethod
+    def normalize_string(text: str) -> str:
+        """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
+        if not text:
+            return ""
+        if not isinstance(text, str):
+            text = str(text)
+        text = text.upper()
 
-    # Strip gender suffixes like (A) or (O/A)
-    text = re.sub(r'\([AO](/[AO])?\)', '', text)
+        # Strip gender suffixes like (A) or (O/A)
+        text = re.sub(r'\([AO](/[AO])?\)', '', text)
 
-    # Normalize common gendered terms to masculine/base form
-    text = re.sub(r'\b(BRASILEIR|SOLTEIR|CASAD|DIVORCIAD|VIUV|SEPARAD)[AO]S?\b', r'\1O', text)
+        # Normalize common gendered terms to masculine/base form
+        text = re.sub(r'\b(BRASILEIR|SOLTEIR|CASAD|DIVORCIAD|VIUV|SEPARAD)[AO]S?\b', r'\1O', text)
 
-    # Strip trailing state slashes (e.g., JOAO PESSOA/PB -> JOAO PESSOA)
-    text = re.sub(r'/[A-Z]{2}$', '', text)
+        # Standardize state abbreviations (e.g., JOAO PESSOA/PB -> JOAO PESSOA - PB)
+        text = re.sub(r'/([A-Z]{2})$', r' - \1', text)
 
-    # Strip accents
-    text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
-    # Remove extra spaces
-    text = re.sub(r'\s+', ' ', text).strip()
+        # Strip accents
+        text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
-    return text
+        # Remove extra spaces
+        return re.sub(r'\s+', ' ', text).strip()
 
-def normalize_date(text: str) -> str:
-    """Attempt to parse various date formats into YYYY-MM-DD."""
-    if not text:
-        return ""
+    @staticmethod
+    def normalize_date(text: str) -> str:
+        """Attempt to parse various date formats into YYYY-MM-DD."""
+        if not text:
+            return ""
 
-    text = str(text).strip()
+        text = str(text).strip()
 
-    # Check for DD/MM/YYYY or DD-MM-YYYY
-    match = re.match(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$', text)
-    if match:
-        day, month, year = match.groups()
-        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        # Check for DD/MM/YYYY or DD-MM-YYYY
+        match = re.match(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$', text)
+        if match:
+            day, month, year = match.groups()
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
-    # Check for YYYY-MM-DD or YYYY/MM/DD
-    match = re.match(r'^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$', text)
-    if match:
-        year, month, day = match.groups()
-        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        # Check for YYYY-MM-DD or YYYY/MM/DD
+        match = re.match(r'^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$', text)
+        if match:
+            year, month, day = match.groups()
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
-    return text
+        return text
+
+# Backwards compatibility aliases
+normalize_digits = DataNormalizer.normalize_digits
+normalize_string = DataNormalizer.normalize_string
+normalize_date = DataNormalizer.normalize_date
 
 def normalize_list_or_string(item: Any) -> List[str]:
     """Coerce lists and strings into a sorted list of normalized strings."""
