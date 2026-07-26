@@ -136,6 +136,17 @@ class DocumentValidator:
     def validate(self) -> List[Dict[str, str]]:
         self.errors = []
 
+        # CIN (New Brazilian ID) Pruning Logic:
+        # If the document is a CIN, the CPF and RG numbers are identical.
+        # In this case, we strictly do not want to enforce the RG or orgao_emissor_rg fields.
+        entities = self.ground_truth.get("entities", [])
+        for entity in entities:
+            cpf_val = DataNormalizer.normalize_digits(entity.get("cpf", ""))
+            rg_val = DataNormalizer.normalize_digits(entity.get("rg", ""))
+            if cpf_val and rg_val and cpf_val == rg_val:
+                entity.pop("rg", None)
+                entity.pop("orgao_emissor_rg", None)
+
         from core.extractor import DocumentExtractor
         if self._extractor_instance is None:
             self._extractor_instance = DocumentExtractor()

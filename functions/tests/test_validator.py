@@ -101,5 +101,28 @@ class TestDocumentValidator(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["field"], "entities[0].cpf")
 
+    def test_cin_prune(self):
+        ground_truth_cin = {
+            "entities": [
+                {
+                    "cpf": "123.456.789-00",
+                    "rg": "12345678900",
+                    "orgao_emissor_rg": "SSP",
+                    "nome": "João"
+                }
+            ]
+        }
+        typed_text = "João CPF 123.456.789-00"
+        validator = DocumentValidator(ground_truth_cin, typed_text)
+
+        mock_extractor = MagicMock()
+        mock_extractor.audit_draft.return_value = []
+        validator._extractor_instance = mock_extractor
+
+        validator.validate()
+
+        self.assertNotIn("rg", validator.ground_truth["entities"][0])
+        self.assertNotIn("orgao_emissor_rg", validator.ground_truth["entities"][0])
+
 if __name__ == '__main__':
     unittest.main()
