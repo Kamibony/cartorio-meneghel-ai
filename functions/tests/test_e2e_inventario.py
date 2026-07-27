@@ -1,101 +1,122 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from core.extractor import DocumentExtractor, deduplicate_entities
+from core.extractor import DocumentExtractor, deduplicate_entities, get_entity_attr
 from core.validator import DocumentValidator
 
 class TestE2EInventario(unittest.TestCase):
     @patch('google.genai.Client')
     def test_inventario_pipeline(self, mock_client_class):
-        # MOCK EXTRACTOR PAYLOADS
         sot_entities = [
-            # Certidão de Óbito
             {
-                "nome": "JOSÉ PEREIRA",
-                "data_obito": "10/05/2026",
-                "estado_civil": "Casado",
+                "entity_name": "JOSÉ PEREIRA",
+                "entity_type": "PESSOA_FISICA",
                 "_source_document_type": "Certidão de Óbito",
-                "sources": ["Certidão de Óbito"]
+                "sources": ["Certidão de Óbito"],
+                "attributes": [
+                    {"key": "nome", "value": "JOSÉ PEREIRA", "data_type": "STRING"},
+                    {"key": "data_obito", "value": "10/05/2026", "data_type": "DATE"},
+                    {"key": "estado_civil", "value": "Casado", "data_type": "STRING"}
+                ]
             },
-            # Certidão de Casamento
             {
-                "nome": "JOSÉ PEREIRA",
-                "estado_civil": "Casado",
-                "regime_bens": "Comunhão Universal",
+                "entity_name": "JOSÉ PEREIRA",
+                "entity_type": "PESSOA_FISICA",
                 "has_marriage_certificate": True,
                 "_source_document_type": "Certidão de Casamento",
-                "sources": ["Certidão de Casamento"]
+                "sources": ["Certidão de Casamento"],
+                "attributes": [
+                    {"key": "nome", "value": "JOSÉ PEREIRA", "data_type": "STRING"},
+                    {"key": "estado_civil", "value": "Casado", "data_type": "STRING"},
+                    {"key": "regime_bens", "value": "Comunhão Universal", "data_type": "STRING"}
+                ]
             },
             {
-                "nome": "MARIA SILVA PEREIRA",
-                "estado_civil": "Casado",
-                "regime_bens": "Comunhão Universal",
+                "entity_name": "MARIA SILVA PEREIRA",
+                "entity_type": "PESSOA_FISICA",
                 "has_marriage_certificate": True,
                 "_source_document_type": "Certidão de Casamento",
-                "sources": ["Certidão de Casamento"]
+                "sources": ["Certidão de Casamento"],
+                "attributes": [
+                    {"key": "nome", "value": "MARIA SILVA PEREIRA", "data_type": "STRING"},
+                    {"key": "estado_civil", "value": "Casado", "data_type": "STRING"},
+                    {"key": "regime_bens", "value": "Comunhão Universal", "data_type": "STRING"}
+                ]
             },
-            # RG Herdeiro
             {
-                "nome": "LUCAS SILVA PEREIRA",
-                "filiacao_pai": "José",
-                "filiacao_mae": "Maria",
-                "cpf": "222.333.444-55",
+                "entity_name": "LUCAS SILVA PEREIRA",
+                "entity_type": "PESSOA_FISICA",
                 "_source_document_type": "RG",
-                "sources": ["RG"]
+                "sources": ["RG"],
+                "attributes": [
+                    {"key": "nome", "value": "LUCAS SILVA PEREIRA", "data_type": "STRING"},
+                    {"key": "filiacao_pai", "value": "José", "data_type": "STRING"},
+                    {"key": "filiacao_mae", "value": "Maria", "data_type": "STRING"},
+                    {"key": "cpf", "value": "222.333.444-55", "data_type": "IDENTIFIER"}
+                ]
             },
-            # Matrícula
             {
-                "nome": "JOSÉ PEREIRA",
-                "matricula": "10.555",
+                "entity_name": "Imóvel Y",
+                "entity_type": "IMOVEL",
                 "_source_document_type": "Matrícula",
-                "sources": ["Matrícula"]
+                "sources": ["Matrícula"],
+                "attributes": [
+                    {"key": "matricula", "value": "10.555", "data_type": "IDENTIFIER"}
+                ]
             }
         ]
 
-        # STEP 1: Aggregation (Master Profile)
         master_entities = deduplicate_entities(sot_entities)
         ground_truth = {"entities": master_entities}
 
-        # STEP 2: Validation against Minuta text
         minuta_text = "Falecimento de JOSÉ PEREIRA, no dia 15/05/2026. Herdeiro: LUCAS SILVA PEREIRA, CPF 222.333.444-50. Imóvel da Matrícula nº 10.550."
 
         validator = DocumentValidator(ground_truth, minuta_text)
-
         real_extractor = DocumentExtractor()
         draft_data = {
             "entities": [
                 {
-                    "nome": "JOSÉ PEREIRA",
-                    "data_obito": "15/05/2026",
-                    "matricula": "10.550",
-                    "role": "FALECIDO"
+                    "entity_name": "JOSÉ PEREIRA",
+                    "entity_type": "PESSOA_FISICA",
+                    "attributes": [
+                        {"key": "nome", "value": "JOSÉ PEREIRA", "data_type": "STRING"},
+                        {"key": "data_obito", "value": "15/05/2026", "data_type": "DATE"},
+                        {"key": "role", "value": "FALECIDO", "data_type": "STRING"}
+                    ]
                 },
                 {
-                    "nome": "LUCAS SILVA PEREIRA",
-                    "cpf": "222.333.444-50",
-                    "role": "HERDEIRO"
+                    "entity_name": "LUCAS SILVA PEREIRA",
+                    "entity_type": "PESSOA_FISICA",
+                    "attributes": [
+                        {"key": "nome", "value": "LUCAS SILVA PEREIRA", "data_type": "STRING"},
+                        {"key": "cpf", "value": "222.333.444-50", "data_type": "IDENTIFIER"},
+                        {"key": "role", "value": "HERDEIRO", "data_type": "STRING"}
+                    ]
+                },
+                {
+                    "entity_name": "Imóvel Y",
+                    "entity_type": "IMOVEL",
+                    "attributes": [
+                        {"key": "matricula", "value": "10.550", "data_type": "IDENTIFIER"}
+                    ]
                 }
             ]
         }
         real_extractor.extract_from_text = MagicMock(return_value=draft_data)
-
         validator._extractor_instance = real_extractor
-
         errors = validator.validate()
 
-        # Find specific errors
         data_obito_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "data_obito" in e["field"]), None)
         cpf_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "cpf" in e["field"] and e["expected"] == "222.333.444-55"), None)
         matricula_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "matricula" in e["field"]), None)
 
-        # Assertions
-        self.assertIsNotNone(data_obito_error, "Should catch Date of Death mismatch")
+        self.assertIsNotNone(data_obito_error)
         self.assertEqual(data_obito_error["expected"], "10/05/2026")
         self.assertEqual(data_obito_error["found"], "15/05/2026")
 
-        self.assertIsNotNone(cpf_error, "Should catch Heir's CPF mismatch")
+        self.assertIsNotNone(cpf_error)
         self.assertEqual(cpf_error["found"], "222.333.444-50")
 
-        self.assertIsNotNone(matricula_error, "Should catch Matrícula mismatch")
+        self.assertIsNotNone(matricula_error)
         self.assertEqual(matricula_error["expected"], "10.555")
         self.assertEqual(matricula_error["found"], "10.550")
 
