@@ -656,7 +656,7 @@ class DocumentExtractor:
                         if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
                             matched_draft_ent = draft_ent
                             break
-                    elif gt_entity_type == "IMOVEL":
+                    elif gt_entity_type == "IMOVEL" and draft_entity_type in ["IMOVEL", None, "UNKNOWN"]:
                         gt_mat = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "matricula") or "")
                         draft_mat = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "matricula") or "")
                         if gt_mat and draft_mat and gt_mat == draft_mat:
@@ -665,6 +665,17 @@ class DocumentExtractor:
                         gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
                         draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
                         if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                            matched_draft_ent = draft_ent
+                            break
+
+                        import difflib
+                        if gt_mat and draft_mat and difflib.SequenceMatcher(None, gt_mat, draft_mat).ratio() >= 0.7:
+                            matched_draft_ent = draft_ent
+                            break
+
+                        gt_imoveis = [e for e in merged_gt_entities if e.get("entity_type") == "IMOVEL"]
+                        draft_imoveis = [e for e in draft_entities if e.get("entity_type") == "IMOVEL"]
+                        if len(gt_imoveis) == 1 and len(draft_imoveis) == 1 and draft_entity_type == "IMOVEL":
                             matched_draft_ent = draft_ent
                             break
                     elif gt_entity_type == "VEICULO":
