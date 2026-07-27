@@ -146,18 +146,24 @@ class DocumentValidator:
     def validate(self) -> List[Dict[str, str]]:
         self.errors = []
 
-        # CIN (New Brazilian ID) Pruning Logic:
+        from core.extractor import DocumentExtractor, deduplicate_entities, get_entity_attr
+
+        # Deduplicate entities using Universal Legal Hierarchy Rule
+        # This matches what audit_draft will do to align the indices.
+        raw_entities = self.ground_truth.get("entities", [])
+        merged_entities = deduplicate_entities(raw_entities)
+        self.ground_truth["entities"] = merged_entities
+
+        # CIN (New Brazilian ID) Pruning Logic for Dynamic Schema:
         # If the document is a CIN, the CPF and RG numbers are identical.
         # In this case, we strictly do not want to enforce the RG or orgao_emissor_rg fields.
-        entities = self.ground_truth.get("entities", [])
-        for entity in entities:
-            cpf_val = DataNormalizer.normalize_digits(entity.get("cpf", ""))
-            rg_val = DataNormalizer.normalize_digits(entity.get("rg", ""))
+        for entity in self.ground_truth["entities"]:
+            cpf_val = DataNormalizer.normalize_digits(get_entity_attr(entity, "cpf") or "")
+            rg_val = DataNormalizer.normalize_digits(get_entity_attr(entity, "rg") or "")
             if cpf_val and rg_val and cpf_val == rg_val:
-                entity.pop("rg", None)
-                entity.pop("orgao_emissor_rg", None)
+                attrs = entity.get("attributes", [])
+                entity["attributes"] = [a for a in attrs if a.get("key") not in ["rg", "orgao_emissor_rg"]]
 
-        from core.extractor import DocumentExtractor
         if self._extractor_instance is None:
             self._extractor_instance = DocumentExtractor()
 
@@ -170,16 +176,15 @@ class DocumentValidator:
                 field_path = d.get("field", "unknown")
 
                 # Extract entity name if applicable
-                entity_name_val = ""
-                if field_path.startswith("entities["):
+                entity_name_val = d.get("entity_name", "")
+                if not entity_name_val and field_path.startswith("entities["):
                     match = re.search(r"entities\[(\d+)\]", field_path)
                     if match:
                         idx = int(match.group(1))
                         entities_list = self.ground_truth.get("entities", [])
                         if 0 <= idx < len(entities_list):
-                            entity_name_val = entities_list[idx].get("nome", "")
-                            if not entity_name_val:
-                                entity_name_val = entities_list[idx].get("razao_social", "")
+                            ent = entities_list[idx]
+                            entity_name_val = ent.get("entity_name") or get_entity_attr(ent, "nome") or get_entity_attr(ent, "razao_social") or ""
 
                 error = Discrepancy(
                     field=field_path,

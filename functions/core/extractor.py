@@ -354,28 +354,43 @@ class DocumentExtractor:
 
         file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
 
+        sys_instruct = (
+            "You are a legal document extractor. "
+            "You must STRICTLY adhere to the requested JSON schema. "
+            "Do not hallucinate or invent data. If a field is not in the text, omit it or return null. "
+            "Do not include markdown blocks or any other text outside the JSON."
+        )
+
         if document_type == 'DRAFT':
             prompt = (
-                "Extract the entire text verbatim from this document. "
-                "Return the data strictly as a valid JSON object with a single key 'text' containing the extracted text. "
-                "Do not include markdown blocks or any other text outside the JSON."
+                "<TASK>\nExtract the entire text verbatim from this document.\n</TASK>\n"
+                "<OUTPUT_SCHEMA>\nReturn the data strictly as a valid JSON object with a single key 'text' containing the extracted text.\n</OUTPUT_SCHEMA>"
             )
         else:
             # Profile A: Source Identities (Ground Truth)
             prompt = (
-                "Analyze this identity document (e.g., CNH, RG, Certidão). Extract a pure 'Identity Profile'. "
-                "Extract ONLY the person's core identity data (e.g., nome, cpf, rg, data_nascimento, filiacao_mae, filiacao_pai, estado_civil, naturalidade, nacionalidade). "
-                "Also extract a top-level 'document_type' string indicating the type of the source document (e.g., 'Certidão de Casamento', 'RG', 'CNH'). "
-                "Place the data into an 'entities' array. "
-                "If a field is not explicitly present in the document, set its value to null. Do not infer, force, or duplicate values for missing fields. "
-                "Only create top-level entity objects for the primary subjects of the document (the identity holders, spouses, or main contracting parties). "
-                "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. "
-                "NEVER create standalone entities for parents. "
-                "COMPLETELY DISCARD the 'document type' or any 'role' (e.g., ignore 'Titular'). Treat the document purely as a database of personal facts. "
-                "Ensure all extracted fields are flat strings. For example, 'naturalidade' MUST be a single string (e.g., 'João Pessoa - PB'), NEVER a nested object. "
-                "Return the data strictly as a valid JSON object with a top-level key 'entities'. "
-                "Translate all keys and values into Brazilian Portuguese (pt-BR). "
-                "Do not include markdown blocks or any other text outside the JSON."
+                "<TASK>\n"
+                "Analyze this identity document (e.g., CNH, RG, Certidão, Imóvel). Extract a pure 'Identity Profile' identifying entities and their core attributes.\n"
+                "</TASK>\n"
+                "<BUSINESS_RULES>\n"
+                "1. Extract the primary subjects (People, Companies, Properties, Vehicles) as top-level objects.\n"
+                "2. AGGRESSIVELY extract Property Data (e.g., Matrículas), Critical Dates (e.g., data_obito), and Financial/Tax Data (e.g., aliquota_itcd, valores) as standalone attributes.\n"
+                "3. Secondary individuals (e.g., parents) MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. NEVER create standalone entities for parents.\n"
+                "4. All extracted attribute values MUST be flat strings.\n"
+                "5. Translate all keys and values into Brazilian Portuguese (pt-BR).\n"
+                "6. Identify the document type and set it at the top-level 'document_type' field (e.g., 'Certidão de Casamento', 'RG', 'CNH', 'Matrícula').\n"
+                "</BUSINESS_RULES>\n"
+                "<OUTPUT_SCHEMA>\n"
+                "Return a JSON object with two top-level keys:\n"
+                "- 'document_type': string\n"
+                "- 'entities': array of objects, where each object has:\n"
+                "  - 'entity_name': string (the primary name/title)\n"
+                "  - 'entity_type': string (strictly one of: PESSOA_FISICA, PESSOA_JURIDICA, IMOVEL, VEICULO)\n"
+                "  - 'attributes': array of objects, each containing:\n"
+                "      - 'key': string (e.g., 'cpf', 'nome', 'matricula', 'data_obito', 'aliquota_itcd')\n"
+                "      - 'value': string (the extracted value)\n"
+                "      - 'data_type': string (strictly one of: STRING, DATE, IDENTIFIER, ALPHANUMERIC)\n"
+                "</OUTPUT_SCHEMA>"
             )
 
         @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
@@ -386,7 +401,8 @@ class DocumentExtractor:
                     contents=[file_part, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.0
+                        temperature=0.0,
+                        system_instruction=sys_instruct
                     )
                 )
 
@@ -472,21 +488,38 @@ class DocumentExtractor:
 
         client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
 
+        sys_instruct = (
+            "You are a legal document extractor. "
+            "You must STRICTLY adhere to the requested JSON schema. "
+            "Do not hallucinate or invent data. If a field is not in the text, omit it or return null. "
+            "Do not include markdown blocks or any other text outside the JSON."
+        )
+
         # Profile B: Legal Drafts
         prompt = (
-            "Analyze the following legal draft text and extract all relevant structured data. "
-            "1. Extract document-level properties (e.g., instrument type) into a 'document_metadata' object. "
-            "2. Extract the entities mentioned within the text into an 'entities' array. "
-            "Each object in this array MUST include their assigned legal 'role' (e.g., 'OUTORGANTE', 'OUTORGADO', 'VENDEDOR') "
-            "and their listed personal data (e.g., nome, cpf, rg). "
-            "Only create top-level entity objects for the primary subjects of the document (the main contracting parties like outorgantes, outorgados, vendedores, compradores). "
-            "Secondary individuals, such as parents, MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. "
-            "NEVER create standalone entities for parents. "
-            "Ensure all extracted fields are flat strings. For example, 'naturalidade' MUST be a single string (e.g., 'João Pessoa - PB'), NEVER a nested object. "
-            "The output MUST be a strictly valid JSON object containing exactly the top-level keys 'document_metadata' and 'entities'. "
-            "Translate all keys and values into Brazilian Portuguese (pt-BR). "
-            "If a field is not found or cannot be determined, set its value to null. "
-            "Do not include markdown blocks or any other text outside the JSON."
+            "<TASK>\n"
+            "Analyze the following legal draft text and extract all relevant structured data identifying entities and their core attributes.\n"
+            "</TASK>\n"
+            "<BUSINESS_RULES>\n"
+            "1. Extract document-level properties (e.g., instrument type) into a 'document_metadata' object.\n"
+            "2. Extract the primary subjects (People, Companies, Properties, Vehicles) as top-level objects in the 'entities' array.\n"
+            "3. AGGRESSIVELY extract Property Data (e.g., Matrículas), Critical Dates (e.g., data_obito), and Financial/Tax Data (e.g., aliquota_itcd, valores) as standalone attributes.\n"
+            "4. Each object in this array MUST include their assigned legal 'role' (e.g., 'OUTORGANTE', 'OUTORGADO', 'VENDEDOR') as a string attribute if applicable.\n"
+            "5. Secondary individuals (e.g., parents) MUST be strictly nested as 'filiacao_mae' and 'filiacao_pai' string attributes within the primary subject's object. NEVER create standalone entities for parents.\n"
+            "6. All extracted attribute values MUST be flat strings.\n"
+            "7. Translate all keys and values into Brazilian Portuguese (pt-BR).\n"
+            "</BUSINESS_RULES>\n"
+            "<OUTPUT_SCHEMA>\n"
+            "Return a strictly valid JSON object with:\n"
+            "- 'document_metadata': object\n"
+            "- 'entities': array of objects, where each object has:\n"
+            "  - 'entity_name': string (the primary name/title)\n"
+            "  - 'entity_type': string (strictly one of: PESSOA_FISICA, PESSOA_JURIDICA, IMOVEL, VEICULO)\n"
+            "  - 'attributes': array of objects, each containing:\n"
+            "      - 'key': string (e.g., 'cpf', 'nome', 'matricula', 'data_obito', 'aliquota_itcd')\n"
+            "      - 'value': string (the extracted value)\n"
+            "      - 'data_type': string (strictly one of: STRING, DATE, IDENTIFIER, ALPHANUMERIC)\n"
+            "</OUTPUT_SCHEMA>"
         )
 
         @retry(wait=wait_random_exponential(min=2, max=15), stop=stop_after_attempt(5), retry=retry_if_exception_type(Exception))
@@ -497,7 +530,8 @@ class DocumentExtractor:
                     contents=[prompt, text],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.0
+                        temperature=0.0,
+                        system_instruction=sys_instruct
                     )
                 )
 
@@ -597,68 +631,72 @@ class DocumentExtractor:
 
                 # We need to find the draft entity that matches this gt_ent
                 for draft_ent in draft_entities:
-                    if draft_ent.get("entity_type") == gt_entity_type:
-                        if gt_entity_type == "PESSOA_FISICA":
-                            gt_cpf = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cpf") or "")
-                            draft_cpf = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "cpf") or "")
-                            if gt_cpf and draft_cpf and gt_cpf == draft_cpf:
-                                matched_draft_ent = draft_ent
-                                break
-                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or get_entity_attr(gt_ent, "nome") or "")
-                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or get_entity_attr(draft_ent, "nome") or "")
-                            if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
-                                matched_draft_ent = draft_ent
-                                break
-                        elif gt_entity_type == "PESSOA_JURIDICA":
-                            gt_cnpj = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cnpj") or "")
-                            draft_cnpj = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "cnpj") or "")
-                            if gt_cnpj and draft_cnpj and gt_cnpj == draft_cnpj:
-                                matched_draft_ent = draft_ent
-                                break
-                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or get_entity_attr(gt_ent, "razao_social") or "")
-                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or get_entity_attr(draft_ent, "razao_social") or "")
-                            if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
-                                matched_draft_ent = draft_ent
-                                break
-                        elif gt_entity_type == "IMOVEL":
-                            gt_mat = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "matricula") or "")
-                            draft_mat = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "matricula") or "")
-                            if gt_mat and draft_mat and gt_mat == draft_mat:
-                                matched_draft_ent = draft_ent
-                                break
-                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
-                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
-                            if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
-                                matched_draft_ent = draft_ent
-                                break
-                        elif gt_entity_type == "VEICULO":
-                            gt_chassi = DataNormalizer.normalize_string(get_entity_attr(gt_ent, "chassi") or "")
-                            draft_chassi = DataNormalizer.normalize_string(get_entity_attr(draft_ent, "chassi") or "")
-                            if gt_chassi and draft_chassi and gt_chassi == draft_chassi:
-                                matched_draft_ent = draft_ent
-                                break
-                            gt_placa = DataNormalizer.normalize_string(get_entity_attr(gt_ent, "placa") or "")
-                            draft_placa = DataNormalizer.normalize_string(get_entity_attr(draft_ent, "placa") or "")
-                            if gt_placa and draft_placa and gt_placa == draft_placa:
-                                matched_draft_ent = draft_ent
-                                break
-                        else:
-                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
-                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
-                            if draft_nome and gt_nome and gt_nome == draft_nome:
-                                matched_draft_ent = draft_ent
-                                break
+                    draft_entity_type = draft_ent.get("entity_type")
+
+                    # Loosen strict type check to handle LLM misclassification, matching mainly by identifiers
+                    if gt_entity_type == "PESSOA_FISICA" and draft_entity_type in ["PESSOA_FISICA", None, "UNKNOWN"]:
+                        gt_cpf = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cpf") or "")
+                        draft_cpf = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "cpf") or "")
+                        if gt_cpf and draft_cpf and gt_cpf == draft_cpf:
+                            matched_draft_ent = draft_ent
+                            break
+                        gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or get_entity_attr(gt_ent, "nome") or "")
+                        draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or get_entity_attr(draft_ent, "nome") or "")
+                        if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                            matched_draft_ent = draft_ent
+                            break
+                    elif gt_entity_type == "PESSOA_JURIDICA" and draft_entity_type in ["PESSOA_JURIDICA", None, "UNKNOWN"]:
+                        gt_cnpj = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cnpj") or "")
+                        draft_cnpj = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "cnpj") or "")
+                        if gt_cnpj and draft_cnpj and gt_cnpj == draft_cnpj:
+                            matched_draft_ent = draft_ent
+                            break
+                        gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or get_entity_attr(gt_ent, "razao_social") or "")
+                        draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or get_entity_attr(draft_ent, "razao_social") or "")
+                        if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                            matched_draft_ent = draft_ent
+                            break
+                    elif gt_entity_type == "IMOVEL":
+                        gt_mat = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "matricula") or "")
+                        draft_mat = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "matricula") or "")
+                        if gt_mat and draft_mat and gt_mat == draft_mat:
+                            matched_draft_ent = draft_ent
+                            break
+                        gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
+                        draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
+                        if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                            matched_draft_ent = draft_ent
+                            break
+                    elif gt_entity_type == "VEICULO":
+                        gt_chassi = DataNormalizer.normalize_string(get_entity_attr(gt_ent, "chassi") or "")
+                        draft_chassi = DataNormalizer.normalize_string(get_entity_attr(draft_ent, "chassi") or "")
+                        if gt_chassi and draft_chassi and gt_chassi == draft_chassi:
+                            matched_draft_ent = draft_ent
+                            break
+                        gt_placa = DataNormalizer.normalize_string(get_entity_attr(gt_ent, "placa") or "")
+                        draft_placa = DataNormalizer.normalize_string(get_entity_attr(draft_ent, "placa") or "")
+                        if gt_placa and draft_placa and gt_placa == draft_placa:
+                            matched_draft_ent = draft_ent
+                            break
+                    else:
+                        gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
+                        draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
+                        if draft_nome and gt_nome and gt_nome == draft_nome:
+                            matched_draft_ent = draft_ent
+                            break
+
+                nome_entidade = gt_ent.get("entity_name") or get_entity_attr(gt_ent, "nome") or get_entity_attr(gt_ent, "razao_social") or "Desconhecido"
 
                 if not matched_draft_ent:
                     # Entity entirely missing from draft
-                    nome_entidade = gt_ent.get("entity_name") or get_entity_attr(gt_ent, "nome") or get_entity_attr(gt_ent, "razao_social") or "Desconhecido"
                     discrepancies.append({
                         "field": f"entities[{i}]",
                         "category": "UNMATCHED_ENTITY",
                         "message": f"Entidade '{nome_entidade}' não encontrada na minuta do documento.",
                         "expected": nome_entidade,
                         "found_in_text": None,
-                        "requires_human_review": False
+                        "requires_human_review": False,
+                        "entity_name": nome_entidade
                     })
                     continue
 
@@ -693,7 +731,8 @@ class DocumentExtractor:
                             "message": f"O campo esperado '{label_key}' está ausente na minuta.",
                             "expected": str(expected_val),
                             "found_in_text": None,
-                            "requires_human_review": False
+                            "requires_human_review": False,
+                            "entity_name": nome_entidade
                         })
                     else:
                         if data_type == "IDENTIFIER" or key in ["cpf", "cnpj", "rg", "cep", "matricula"]:
@@ -726,7 +765,8 @@ class DocumentExtractor:
                                 "expected": str(expected_val),
                                 "found": str(draft_val),
                                 "found_in_text": exact_substring,
-                                "requires_human_review": False
+                                "requires_human_review": False,
+                                "entity_name": nome_entidade
                             })
 
             return discrepancies
