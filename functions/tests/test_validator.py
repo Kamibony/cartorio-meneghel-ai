@@ -105,10 +105,13 @@ class TestDocumentValidator(unittest.TestCase):
         ground_truth_cin = {
             "entities": [
                 {
-                    "cpf": "123.456.789-00",
-                    "rg": "12345678900",
-                    "orgao_emissor_rg": "SSP",
-                    "nome": "João"
+                    "entity_type": "PESSOA_FISICA",
+                    "attributes": [
+                        {"key": "cpf", "value": "123.456.789-00", "data_type": "IDENTIFIER"},
+                        {"key": "rg", "value": "12345678900", "data_type": "IDENTIFIER"},
+                        {"key": "orgao_emissor_rg", "value": "SSP", "data_type": "STRING"},
+                        {"key": "nome", "value": "João", "data_type": "STRING"}
+                    ]
                 }
             ]
         }
@@ -121,8 +124,10 @@ class TestDocumentValidator(unittest.TestCase):
 
         validator.validate()
 
-        self.assertNotIn("rg", validator.ground_truth["entities"][0])
-        self.assertNotIn("orgao_emissor_rg", validator.ground_truth["entities"][0])
+        attributes = validator.ground_truth["entities"][0].get("attributes", [])
+        keys = [a.get("key") for a in attributes]
+        self.assertNotIn("rg", keys)
+        self.assertNotIn("orgao_emissor_rg", keys)
 
 if __name__ == '__main__':
     unittest.main()
