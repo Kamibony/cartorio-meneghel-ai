@@ -1,3 +1,4 @@
+import copy
 import os
 import json
 import logging
@@ -10,14 +11,33 @@ logger = logging.getLogger(__name__)
 
 _semaphore = threading.Semaphore(3)
 
+def normalize_attribute_key(key: str) -> str:
+    if not key:
+        return ""
+    key = key.lower().strip()
+    aliases = {
+        "nome_mae": "filiacao_mae",
+        "nome_pai": "filiacao_pai",
+        "data_nasc": "data_nascimento",
+        "nascimento": "data_nascimento",
+        "dt_nascimento": "data_nascimento",
+        "dt_nasc": "data_nascimento",
+        "doc_identidade": "rg",
+        "identidade": "rg",
+        "registro_geral": "rg",
+        "cadastro_pessoa_fisica": "cpf"
+    }
+    return aliases.get(key, key)
+
+def get_entity_attr(entity: dict, key: str) -> str:
+    for attr in entity.get("attributes", []):
+        if attr.get("key") == key:
+            return attr.get("value")
+    return None
+
 def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> dict:
-    """
-    Intelligently merges an incoming entity into an existing entity to build the Master Truth Profile.
-    Applies hierarchy rules (e.g. Certidão > RG) to auto-resolve safe conflicts silently, while surfacing hard factual anomalies.
-    """
     from core.validator import DataNormalizer
 
-    # Document Hierarchy Weights (higher = more authoritative)
     hierarchy = {
         "Certidão de Casamento": 100,
         "Certidão de Nascimento": 90,
@@ -29,7 +49,6 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
     }
 
     incoming_type = incoming_entity.get("_source_document_type", "Desconhecido")
-    # Clean it up a bit for matching
     base_incoming_type = "Desconhecido"
     for h_key in hierarchy:
         if h_key.lower() in incoming_type.lower():
@@ -38,7 +57,6 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
 
     incoming_weight = hierarchy.get(base_incoming_type, 0)
 
-    # Determine the existing document's weight based on its tracked sources
     existing_sources = existing_entity.get("sources", [])
     max_existing_weight = 0
     primary_existing_source = "Desconhecido"
@@ -51,42 +69,57 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
                     max_existing_weight = weight
                     primary_existing_source = src
 
-    for key, incoming_val in incoming_entity.items():
-        if key in ["_source_document_type", "sources", "_conflicts", "_resolved_conflicts"]:
+    existing_attrs = {attr["key"]: attr for attr in existing_entity.get("attributes", [])}
+
+    for incoming_attr in incoming_entity.get("attributes", []):
+        key = incoming_attr.get("key", "")
+        if not key:
             continue
+
+        key = normalize_attribute_key(key)
+        incoming_attr["key"] = key
+
+        incoming_val = incoming_attr.get("value")
+        data_type = incoming_attr.get("data_type", "STRING")
 
         if incoming_val in (None, ""):
             continue
 
-        existing_val = existing_entity.get(key)
-
-        if existing_val in (None, ""):
-            existing_entity[key] = incoming_val
+        if key not in existing_attrs:
+            existing_attrs[key] = incoming_attr
             continue
 
-        if key in ["cpf", "rg"]:
+        existing_attr = existing_attrs[key]
+        existing_val = existing_attr.get("value")
+
+        if existing_val in (None, ""):
+            existing_attrs[key] = incoming_attr
+            continue
+
+        if data_type == "IDENTIFIER" or key in ["cpf", "cnpj", "rg", "cep", "matricula"]:
             norm_incoming = DataNormalizer.normalize_digits(incoming_val)
             norm_existing = DataNormalizer.normalize_digits(existing_val)
+        elif data_type == "DATE" or "data" in key:
+            norm_incoming = DataNormalizer.normalize_date(incoming_val)
+            norm_existing = DataNormalizer.normalize_date(existing_val)
+        elif data_type == "ALPHANUMERIC":
+            norm_incoming = DataNormalizer.normalize_string(incoming_val)
+            norm_existing = DataNormalizer.normalize_string(existing_val)
         else:
             norm_incoming = DataNormalizer.normalize_string(incoming_val)
             norm_existing = DataNormalizer.normalize_string(existing_val)
 
         if norm_incoming != norm_existing:
-            # Special logic for names (substring match allows keeping the longest)
             if key == "nome" and (norm_incoming in norm_existing or norm_existing in norm_incoming):
                 if len(str(incoming_val)) > len(str(existing_val)):
-                    existing_entity[key] = incoming_val
+                    existing_attrs[key] = incoming_attr
                 continue
 
-            # Immutable Data Check: Force Hard Conflict regardless of hierarchy
-            immutable_fields = {"cpf", "data_nascimento", "filiacao_mae", "filiacao_pai"}
+            immutable_fields = {"cpf", "cnpj", "data_nascimento", "filiacao_mae", "filiacao_pai"}
 
             if key not in immutable_fields:
-                # Conflict handling
-                # 1. Safe Automated Override: Strict Hierarchy Win
                 if incoming_weight > max_existing_weight:
-                    # Incoming wins
-                    existing_entity[key] = incoming_val
+                    existing_attrs[key] = incoming_attr
                     if "_resolved_conflicts" not in existing_entity:
                         existing_entity["_resolved_conflicts"] = []
                     if key not in existing_entity["_resolved_conflicts"]:
@@ -94,14 +127,12 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
                     continue
 
                 elif max_existing_weight > incoming_weight:
-                    # Existing wins, silent log
                     if "_resolved_conflicts" not in existing_entity:
                         existing_entity["_resolved_conflicts"] = []
                     if key not in existing_entity["_resolved_conflicts"]:
                         existing_entity["_resolved_conflicts"].append(key)
                     continue
 
-            # 2. Hard Conflict: Same tier, unresolvable, or IMMUTABLE data mismatch
             if "_conflicts" not in existing_entity:
                 existing_entity["_conflicts"] = {}
 
@@ -113,12 +144,19 @@ def merge_into_master_profile(existing_entity: dict, incoming_entity: dict) -> d
                     ]
                 }
             else:
-                # Add to existing conflicts if not already there
                 options = existing_entity["_conflicts"][key]["options"]
                 if not any(opt.get("value") == incoming_val for opt in options):
                     options.append({"value": incoming_val, "source": incoming_type})
 
-    # Track sources non-destructively
+    existing_entity["attributes"] = list(existing_attrs.values())
+
+    if incoming_entity.get("entity_name") and existing_entity.get("entity_name"):
+        norm_inc_name = DataNormalizer.normalize_string(incoming_entity["entity_name"])
+        norm_ex_name = DataNormalizer.normalize_string(existing_entity["entity_name"])
+        if (norm_inc_name in norm_ex_name or norm_ex_name in norm_inc_name):
+             if len(str(incoming_entity["entity_name"])) > len(str(existing_entity["entity_name"])):
+                 existing_entity["entity_name"] = incoming_entity["entity_name"]
+
     if incoming_type and incoming_type not in existing_sources:
         existing_sources.append(incoming_type)
         existing_entity["sources"] = existing_sources
@@ -129,56 +167,96 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
     """
     Deterministically deduplicates and merges entities across documents to build a Master Truth Profile.
     Uses O(N^2) pairwise comparison to allow matching when CPFs are missing (e.g. Certidoes vs RG).
-    Matches by CPF first, falling back to Normalized Name (with prefix/substring match) + non-conflicting Filiacao Mae.
     """
     from core.validator import DataNormalizer
 
-    def do_entities_match(ent1, ent2):
-        cpf1 = DataNormalizer.normalize_digits(ent1.get("cpf", ""))
-        cpf2 = DataNormalizer.normalize_digits(ent2.get("cpf", ""))
-
-        if cpf1 and cpf2 and cpf1 == cpf2:
+    def is_name_compatible(n1, n2):
+        if not n1 or not n2:
+            return False
+        if n1 in n2 or n2 in n1:
             return True
+        stopwords = {"DE", "DA", "DO", "DAS", "DOS", "E"}
+        t1 = {w for w in n1.split() if w not in stopwords}
+        t2 = {w for w in n2.split() if w not in stopwords}
+        if t1 and t2 and (t1.issubset(t2) or t2.issubset(t1)):
+            return True
+        return False
 
-        nome1 = DataNormalizer.normalize_string(ent1.get("nome", ""))
-        nome2 = DataNormalizer.normalize_string(ent2.get("nome", ""))
+    def do_entities_match(ent1, ent2):
+        if ent1.get("entity_type") != ent2.get("entity_type"):
+            return False
 
-        def is_name_compatible(n1, n2):
-            if not n1 or not n2:
-                return False
-            if n1 in n2 or n2 in n1:
+        entity_type = ent1.get("entity_type")
+
+        if entity_type == "PESSOA_FISICA":
+            cpf1 = DataNormalizer.normalize_digits(get_entity_attr(ent1, "cpf") or "")
+            cpf2 = DataNormalizer.normalize_digits(get_entity_attr(ent2, "cpf") or "")
+
+            if cpf1 and cpf2 and cpf1 == cpf2:
                 return True
-            stopwords = {"DE", "DA", "DO", "DAS", "DOS", "E"}
-            t1 = {w for w in n1.split() if w not in stopwords}
-            t2 = {w for w in n2.split() if w not in stopwords}
-            if t1 and t2 and (t1.issubset(t2) or t2.issubset(t1)):
+
+            nome1 = DataNormalizer.normalize_string(ent1.get("entity_name") or get_entity_attr(ent1, "nome") or "")
+            nome2 = DataNormalizer.normalize_string(ent2.get("entity_name") or get_entity_attr(ent2, "nome") or "")
+
+            if (not cpf1 or not cpf2) and nome1 and nome2:
+                if is_name_compatible(nome1, nome2):
+                    mae1 = DataNormalizer.normalize_string(get_entity_attr(ent1, "filiacao_mae") or "")
+                    mae2 = DataNormalizer.normalize_string(get_entity_attr(ent2, "filiacao_mae") or "")
+
+                    if mae1 and mae2:
+                        if is_name_compatible(mae1, mae2):
+                            return True
+                        else:
+                            return False
+
+                    return True
+            return False
+
+        elif entity_type == "PESSOA_JURIDICA":
+            cnpj1 = DataNormalizer.normalize_digits(get_entity_attr(ent1, "cnpj") or "")
+            cnpj2 = DataNormalizer.normalize_digits(get_entity_attr(ent2, "cnpj") or "")
+            if cnpj1 and cnpj2 and cnpj1 == cnpj2:
+                return True
+            nome1 = DataNormalizer.normalize_string(ent1.get("entity_name") or get_entity_attr(ent1, "razao_social") or "")
+            nome2 = DataNormalizer.normalize_string(ent2.get("entity_name") or get_entity_attr(ent2, "razao_social") or "")
+            if (not cnpj1 or not cnpj2) and nome1 and nome2:
+                if is_name_compatible(nome1, nome2):
+                    return True
+            return False
+
+        elif entity_type == "IMOVEL":
+            mat1 = DataNormalizer.normalize_digits(get_entity_attr(ent1, "matricula") or "")
+            mat2 = DataNormalizer.normalize_digits(get_entity_attr(ent2, "matricula") or "")
+            if mat1 and mat2 and mat1 == mat2:
                 return True
             return False
 
-        # If one CPF is missing or they don't have CPFs, check name compatibility
-        if (not cpf1 or not cpf2) and nome1 and nome2:
-            # Check for prefix or substring match (e.g. BIANCA AGUIAR SANTOS vs BIANCA AGUIAR SANTOS DANTAS)
-            if is_name_compatible(nome1, nome2):
-                # Need to check mother's name to avoid false positives (e.g. siblings)
-                mae1 = DataNormalizer.normalize_string(ent1.get("filiacao_mae", ""))
-                mae2 = DataNormalizer.normalize_string(ent2.get("filiacao_mae", ""))
-
-                # If both have a mother's name, they must match or one must be a substring
-                if mae1 and mae2:
-                    if is_name_compatible(mae1, mae2):
-                        return True
-                    else:
-                        return False # Explicit conflict
-
-                # If only one has a mother's name or neither do, accept the name match
+        elif entity_type == "VEICULO":
+            chassi1 = DataNormalizer.normalize_string(get_entity_attr(ent1, "chassi") or "")
+            chassi2 = DataNormalizer.normalize_string(get_entity_attr(ent2, "chassi") or "")
+            placa1 = DataNormalizer.normalize_string(get_entity_attr(ent1, "placa") or "")
+            placa2 = DataNormalizer.normalize_string(get_entity_attr(ent2, "placa") or "")
+            if chassi1 and chassi2 and chassi1 == chassi2:
                 return True
+            if placa1 and placa2 and placa1 == placa2:
+                return True
+            return False
 
-        return False
+        else:
+            nome1 = DataNormalizer.normalize_string(ent1.get("entity_name") or "")
+            nome2 = DataNormalizer.normalize_string(ent2.get("entity_name") or "")
+            if nome1 and nome2 and nome1 == nome2:
+                return True
+            return False
 
     merged_entities = []
 
     for entity in entities:
-        # Find if this entity matches an already merged entity
+        if "attributes" in entity:
+            for attr in entity["attributes"]:
+                if "key" in attr:
+                    attr["key"] = normalize_attribute_key(attr["key"])
+
         matched_idx = -1
         for i, merged_ent in enumerate(merged_entities):
             if do_entities_match(entity, merged_ent):
@@ -186,11 +264,9 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
                 break
 
         if matched_idx == -1:
-            # Not matched, add as a new entity (copying to avoid mutating source)
-            new_ent = dict(entity)
+            new_ent = copy.deepcopy(entity)
             doc_type = new_ent.pop("_source_document_type", "")
 
-            # Non-destructively track sources for new entities as well
             current_sources = new_ent.get("sources", [])
             if not isinstance(current_sources, list):
                 current_sources = []
@@ -201,31 +277,35 @@ def deduplicate_entities(entities: list[Dict[str, Any]]) -> list[Dict[str, Any]]
             new_ent["sources"] = current_sources
             merged_entities.append(new_ent)
         else:
-            # Matched, perform intelligent merge using the hierarchy rules
             existing = merged_entities[matched_idx]
-
-            # Pass document type to merge function
             incoming_type = entity.get("_source_document_type", "")
             if incoming_type:
                 entity["_source_document_type"] = incoming_type
 
             merged_entities[matched_idx] = merge_into_master_profile(existing, entity)
 
-    # Final pass: Ensure "Casado(a)" is enforced if marriage cert exists and wasn't manually skipped
     for existing in merged_entities:
         has_marriage_cert = any("casamento" in src.lower() for src in existing.get("sources", []))
         if existing.get("has_marriage_certificate") or has_marriage_cert:
             resolved_conflicts = existing.get("_resolved_conflicts", [])
             if "estado_civil" not in resolved_conflicts:
-                existing_civil = existing.get("estado_civil")
-                # Even if we don't know existing, it should be Casado(a) if marriage cert present
+                existing_civil = get_entity_attr(existing, "estado_civil")
                 if DataNormalizer.normalize_string(str(existing_civil)) != DataNormalizer.normalize_string("Casado(a)"):
-                    existing["estado_civil"] = "Casado(a)"
+                    attrs = existing.get("attributes", [])
+                    found = False
+                    for attr in attrs:
+                        if attr.get("key") == "estado_civil":
+                            attr["value"] = "Casado(a)"
+                            found = True
+                            break
+                    if not found:
+                        attrs.append({"key": "estado_civil", "value": "Casado(a)", "data_type": "STRING"})
+                        existing["attributes"] = attrs
+
                     if "_resolved_conflicts" not in existing:
                         existing["_resolved_conflicts"] = []
                     existing["_resolved_conflicts"].append("estado_civil")
 
-                    # Remove from conflicts if it was there
                     if "_conflicts" in existing and "estado_civil" in existing["_conflicts"]:
                         del existing["_conflicts"]["estado_civil"]
                         if not existing["_conflicts"]:
@@ -466,7 +546,6 @@ class DocumentExtractor:
         from core.validator import DataNormalizer
 
         try:
-            from core.validator import CORE_IDENTITY_FIELDS
             # 1. Extract structured data from the draft text
             draft_data = self.extract_from_text(draft_text)
             draft_entities = draft_data.get("entities", [])
@@ -476,17 +555,10 @@ class DocumentExtractor:
             raw_gt_entities = ground_truth.get("entities", [])
             merged_gt_entities = deduplicate_entities(raw_gt_entities)
 
-            # Apply CORE_IDENTITY_FIELDS whitelist to the merged entities
-            # This ensures internal metadata like 'sources' does not leak into the validation
-            gt_entities = []
-            for entity in merged_gt_entities:
-                clean_entity = {k: v for k, v in entity.items() if k in CORE_IDENTITY_FIELDS}
-                gt_entities.append(clean_entity)
-
-            # Store sources for CIN check
+            # Store sources for CIN check (using get_entity_attr)
             gt_sources_by_cpf = {}
             for entity in merged_gt_entities:
-                cpf = DataNormalizer.normalize_digits(entity.get("cpf", ""))
+                cpf = DataNormalizer.normalize_digits(get_entity_attr(entity, "cpf") or "")
                 if cpf:
                     gt_sources_by_cpf[cpf] = entity.get("sources", [])
 
@@ -503,64 +575,116 @@ class DocumentExtractor:
                 "nacionalidade": "Nacionalidade",
                 "profissao": "Profissão",
                 "endereco": "Endereço",
-                "regime_bens": "Regime de Bens"
+                "regime_bens": "Regime de Bens",
+                "matricula": "Matrícula",
+                "chassi": "Chassi",
+                "placa": "Placa",
+                "cnpj": "CNPJ",
+                "razao_social": "Razão Social"
             }
+
+            def format_label(key):
+                return field_labels.get(key, key.replace("_", " ").title())
+
             discrepancies = []
 
-            # Create lookup dictionaries for draft entities (by CPF)
-            draft_by_cpf = {}
-            for draft_ent in draft_entities:
-                cpf = DataNormalizer.normalize_digits(draft_ent.get("cpf", ""))
-                if cpf:
-                    draft_by_cpf[cpf] = draft_ent
-
             # 2. Deterministic Diffing
-            for i, gt_ent in enumerate(gt_entities):
-                gt_cpf = DataNormalizer.normalize_digits(gt_ent.get("cpf", ""))
-                gt_nome = DataNormalizer.normalize_string(gt_ent.get("nome", ""))
+            for i, gt_ent in enumerate(merged_gt_entities):
+                gt_entity_type = gt_ent.get("entity_type", "UNKNOWN")
 
                 # Find matching entity in draft
                 matched_draft_ent = None
-                if gt_cpf and gt_cpf in draft_by_cpf:
-                    matched_draft_ent = draft_by_cpf[gt_cpf]
-                else:
-                    # Fallback to name substring matching for draft entity lookup
-                    # E.g. Ground Truth has "BIANCA AGUIAR SANTOS DANTAS"
-                    # Draft has "BIANCA AGUIAR SANTOS"
-                    for draft_ent in draft_entities:
-                        draft_nome = DataNormalizer.normalize_string(draft_ent.get("nome", ""))
-                        if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
-                            matched_draft_ent = draft_ent
-                            break
+
+                # We need to find the draft entity that matches this gt_ent
+                for draft_ent in draft_entities:
+                    if draft_ent.get("entity_type") == gt_entity_type:
+                        if gt_entity_type == "PESSOA_FISICA":
+                            gt_cpf = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cpf") or "")
+                            draft_cpf = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "cpf") or "")
+                            if gt_cpf and draft_cpf and gt_cpf == draft_cpf:
+                                matched_draft_ent = draft_ent
+                                break
+                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or get_entity_attr(gt_ent, "nome") or "")
+                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or get_entity_attr(draft_ent, "nome") or "")
+                            if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                                matched_draft_ent = draft_ent
+                                break
+                        elif gt_entity_type == "PESSOA_JURIDICA":
+                            gt_cnpj = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cnpj") or "")
+                            draft_cnpj = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "cnpj") or "")
+                            if gt_cnpj and draft_cnpj and gt_cnpj == draft_cnpj:
+                                matched_draft_ent = draft_ent
+                                break
+                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or get_entity_attr(gt_ent, "razao_social") or "")
+                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or get_entity_attr(draft_ent, "razao_social") or "")
+                            if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                                matched_draft_ent = draft_ent
+                                break
+                        elif gt_entity_type == "IMOVEL":
+                            gt_mat = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "matricula") or "")
+                            draft_mat = DataNormalizer.normalize_digits(get_entity_attr(draft_ent, "matricula") or "")
+                            if gt_mat and draft_mat and gt_mat == draft_mat:
+                                matched_draft_ent = draft_ent
+                                break
+                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
+                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
+                            if draft_nome and gt_nome and (draft_nome in gt_nome or gt_nome in draft_nome):
+                                matched_draft_ent = draft_ent
+                                break
+                        elif gt_entity_type == "VEICULO":
+                            gt_chassi = DataNormalizer.normalize_string(get_entity_attr(gt_ent, "chassi") or "")
+                            draft_chassi = DataNormalizer.normalize_string(get_entity_attr(draft_ent, "chassi") or "")
+                            if gt_chassi and draft_chassi and gt_chassi == draft_chassi:
+                                matched_draft_ent = draft_ent
+                                break
+                            gt_placa = DataNormalizer.normalize_string(get_entity_attr(gt_ent, "placa") or "")
+                            draft_placa = DataNormalizer.normalize_string(get_entity_attr(draft_ent, "placa") or "")
+                            if gt_placa and draft_placa and gt_placa == draft_placa:
+                                matched_draft_ent = draft_ent
+                                break
+                        else:
+                            gt_nome = DataNormalizer.normalize_string(gt_ent.get("entity_name") or "")
+                            draft_nome = DataNormalizer.normalize_string(draft_ent.get("entity_name") or "")
+                            if draft_nome and gt_nome and gt_nome == draft_nome:
+                                matched_draft_ent = draft_ent
+                                break
 
                 if not matched_draft_ent:
                     # Entity entirely missing from draft
-                    nome_entidade = gt_ent.get('nome', 'Desconhecido')
+                    nome_entidade = gt_ent.get("entity_name") or get_entity_attr(gt_ent, "nome") or get_entity_attr(gt_ent, "razao_social") or "Desconhecido"
                     discrepancies.append({
                         "field": f"entities[{i}]",
                         "category": "UNMATCHED_ENTITY",
                         "message": f"Entidade '{nome_entidade}' não encontrada na minuta do documento.",
-                        "expected": gt_ent.get("nome", ""),
+                        "expected": nome_entidade,
                         "found_in_text": None,
                         "requires_human_review": False
                     })
                     continue
 
-                # Compare fields for the matched entity
-                for key in CORE_IDENTITY_FIELDS:
-                    expected_val = gt_ent.get(key)
+                # Intersection Diffing: only check attributes that exist in Ground Truth
+                # (And ensure we don't leak 'sources', '_source_document_type', etc. - which aren't in attributes anyway)
+                for gt_attr in gt_ent.get("attributes", []):
+                    key = gt_attr.get("key")
+                    if not key:
+                        continue
+
+                    expected_val = gt_attr.get("value")
+                    data_type = gt_attr.get("data_type", "STRING")
+
                     if expected_val in (None, ""):
                         continue
 
                     # CIN Pruning Logic:
-                    # New ID format (CIN) uses CPF instead of RG.
-                    gt_rg = DataNormalizer.normalize_digits(gt_ent.get("rg", ""))
-                    if key in ["rg", "orgao_emissor_rg"] and gt_cpf and gt_rg and gt_cpf == gt_rg:
-                        continue
+                    if gt_entity_type == "PESSOA_FISICA" and key in ["rg", "orgao_emissor_rg"]:
+                        gt_cpf = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "cpf") or "")
+                        gt_rg = DataNormalizer.normalize_digits(get_entity_attr(gt_ent, "rg") or "")
+                        if gt_cpf and gt_rg and gt_cpf == gt_rg:
+                            continue # Skip validating RG if it is same as CPF (CIN)
 
-                    draft_val = matched_draft_ent.get(key)
+                    draft_val = get_entity_attr(matched_draft_ent, key)
                     field_path = f"entities[{i}].{key}"
-                    label_key = field_labels.get(key, key)
+                    label_key = format_label(key)
 
                     if draft_val in (None, ""):
                         discrepancies.append({
@@ -572,25 +696,22 @@ class DocumentExtractor:
                             "requires_human_review": False
                         })
                     else:
-                        if key == "cpf":
-                            norm_expected = DataNormalizer.normalize_cpf_cnpj(str(expected_val))
-                            norm_draft = DataNormalizer.normalize_cpf_cnpj(str(draft_val))
-                        elif key == "rg":
-                            norm_expected = DataNormalizer.normalize_digits(str(expected_val))
-                            norm_draft = DataNormalizer.normalize_digits(str(draft_val))
-                        elif key in ["data_nascimento", "data_obito"]:
+                        if data_type == "IDENTIFIER" or key in ["cpf", "cnpj", "rg", "cep", "matricula"]:
+                            norm_expected = DataNormalizer.normalize_cpf_cnpj(str(expected_val)) if key in ["cpf", "cnpj"] else DataNormalizer.normalize_digits(str(expected_val))
+                            norm_draft = DataNormalizer.normalize_cpf_cnpj(str(draft_val)) if key in ["cpf", "cnpj"] else DataNormalizer.normalize_digits(str(draft_val))
+                        elif data_type == "DATE" or "data" in key:
                             norm_expected = DataNormalizer.normalize_date(str(expected_val))
                             norm_draft = DataNormalizer.normalize_date(str(draft_val))
+                        elif data_type == "ALPHANUMERIC":
+                            norm_expected = DataNormalizer.normalize_string(str(expected_val))
+                            norm_draft = DataNormalizer.normalize_string(str(draft_val))
                         else:
                             norm_expected = DataNormalizer.normalize_string(str(expected_val))
                             norm_draft = DataNormalizer.normalize_string(str(draft_val))
 
                         if norm_expected != norm_draft:
-                            # Try to extract the exact substring from the raw draft text
-                            # This is necessary because DocumentValidator downstream requires the exact literal match
                             exact_substring = str(draft_val)
                             try:
-                                # We search the draft text for a case-insensitive match of the drafted value
                                 escaped_val = re.escape(str(draft_val))
                                 match = re.search(escaped_val, draft_text, re.IGNORECASE)
                                 if match:
