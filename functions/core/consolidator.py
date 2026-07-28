@@ -302,31 +302,4 @@ class MasterProfileConsolidator:
 
                 merged_entities[matched_idx] = cls.merge_into_master_profile(existing, entity)
 
-        for existing in merged_entities:
-            has_marriage_cert = any("casamento" in src.lower() for src in existing.get("sources", []))
-            if existing.get("has_marriage_certificate") or has_marriage_cert:
-                resolved_conflicts = existing.get("_resolved_conflicts", [])
-                if "estado_civil" not in resolved_conflicts:
-                    existing_civil = get_entity_attr(existing, "estado_civil")
-                    if DataNormalizer.normalize_string(str(existing_civil)) != DataNormalizer.normalize_string("Casado(a)"):
-                        attrs = existing.get("attributes", [])
-                        found = False
-                        for attr in attrs:
-                            if attr.get("key") == "estado_civil":
-                                attr["value"] = "Casado(a)"
-                                found = True
-                                break
-                        if not found:
-                            attrs.append({"key": "estado_civil", "value": "Casado(a)", "data_type": "STRING"})
-                            existing["attributes"] = attrs
-
-                        if "_resolved_conflicts" not in existing:
-                            existing["_resolved_conflicts"] = []
-                        existing["_resolved_conflicts"].append("estado_civil")
-
-                        if "_conflicts" in existing and "estado_civil" in existing["_conflicts"]:
-                            del existing["_conflicts"]["estado_civil"]
-                            if not existing["_conflicts"]:
-                                del existing["_conflicts"]
-
         return merged_entities

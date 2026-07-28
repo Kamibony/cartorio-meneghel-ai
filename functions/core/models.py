@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator, ValidationError
+from pydantic import BaseModel, field_validator, ValidationError, Field, ConfigDict, model_validator
 from typing import List, Optional, Any, Dict
 import re
 
@@ -8,20 +8,47 @@ class Attribute(BaseModel):
     data_type: str = "STRING"
 
 class EntityModel(BaseModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
     entity_name: str
     entity_type: str
     attributes: List[Attribute] = []
-    _source_document_type: Optional[str] = None
+    source_document_type: Optional[str] = Field(default=None, alias='_source_document_type')
     has_marriage_certificate: Optional[bool] = None
-    _conflicts: Optional[Dict[str, Any]] = None
-    _resolved_conflicts: Optional[List[str]] = None
+    conflicts: Optional[Dict[str, Any]] = Field(default=None, alias='_conflicts')
+    resolved_conflicts: Optional[List[str]] = Field(default=None, alias='_resolved_conflicts')
     sources: Optional[List[str]] = None
-    _extraction_errors: Optional[List[Dict[str, str]]] = None
-
-    class Config:
-        extra = 'allow'
+    extraction_errors: Optional[List[Dict[str, str]]] = Field(default=None, alias='_extraction_errors')
 
 class PessoaFisica(EntityModel):
+    @model_validator(mode='after')
+    def apply_domain_rules(self) -> 'PessoaFisica':
+        # Domain rule: If the entity comes from a Marriage Certificate, its legal status is strictly "Casado(a)"
+        doc_type = self.source_document_type or ""
+        sources = self.sources or []
+        has_cert = self.has_marriage_certificate or any("casamento" in s.lower() for s in sources) or "casamento" in doc_type.lower()
+        if has_cert:
+            found = False
+            for attr in self.attributes:
+                if attr.key == "estado_civil":
+                    attr.value = "Casado(a)"
+                    found = True
+                    break
+            if not found:
+                self.attributes.append(Attribute(key="estado_civil", value="Casado(a)", data_type="STRING"))
+
+            if self.resolved_conflicts is None:
+                self.resolved_conflicts = []
+            if "estado_civil" not in self.resolved_conflicts:
+                self.resolved_conflicts.append("estado_civil")
+
+            if self.conflicts and "estado_civil" in self.conflicts:
+                del self.conflicts["estado_civil"]
+                if not self.conflicts:
+                    self.conflicts = None
+
+        return self
+
     @field_validator('attributes')
     def validate_cpf_rg_date(cls, v):
         for attr in v:
@@ -75,7 +102,7 @@ def validate_entity(entity_dict: dict) -> dict:
         else:
             validated = EntityModel(**entity_dict)
 
-        return validated.model_dump(exclude_unset=True)
+        return validated.model_dump(by_alias=True, exclude_unset=True)
 
     except ValidationError as e:
         # Instead of rejecting the whole entity, we will flag the error and return the dict
