@@ -255,8 +255,8 @@ def merge_entities(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
-        from core.extractor import deduplicate_entities
-        merged_entities = deduplicate_entities(entities)
+        from core.consolidator import MasterProfileConsolidator
+        merged_entities = MasterProfileConsolidator.deduplicate_entities(entities)
 
         return https_fn.Response(
             json.dumps({"status": "success", "entities": merged_entities}),

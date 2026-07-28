@@ -146,12 +146,13 @@ class DocumentValidator:
     def validate(self) -> List[Dict[str, str]]:
         self.errors = []
 
-        from core.extractor import DocumentExtractor, deduplicate_entities, get_entity_attr
+        from core.extractor import DocumentExtractor, get_entity_attr
+        from core.consolidator import MasterProfileConsolidator
 
         # Deduplicate entities using Universal Legal Hierarchy Rule
         # This matches what audit_draft will do to align the indices.
         raw_entities = self.ground_truth.get("entities", [])
-        merged_entities = deduplicate_entities(raw_entities)
+        merged_entities = MasterProfileConsolidator.deduplicate_entities(raw_entities)
         self.ground_truth["entities"] = merged_entities
 
         # CIN (New Brazilian ID) Pruning Logic for Dynamic Schema:

@@ -62,22 +62,45 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       return false;
   };
 
-  const resolveConflict = (entityIndex: number, field: string, value: string) => {
+  const resolveConflict = async (entityIndex: number, field: string, value: string) => {
       if (!resolvedGroundTruth) return;
 
       const newGt = { ...resolvedGroundTruth };
       const entity = newGt.entities[entityIndex];
 
-      entity[field] = value;
+      const documentId = resolvedGroundTruth?.document_id || 'unknown';
+      try {
+          const response = await fetch(`${ENV.apiUrl}/log_hitl_resolution`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              document_id: documentId,
+              field: field,
+              expected: '',
+              found: value,
+              resolution_type: 'resolved_by_user_pre_validation'
+            })
+          });
 
-      if (!entity._resolved_conflicts) {
-          entity._resolved_conflicts = [];
+          if (!response.ok) {
+              throw new Error(`API error: ${response.status}`);
+          }
+
+          // Only apply the optimistic update if the fetch succeeded
+          entity[field] = value;
+
+          if (!entity._resolved_conflicts) {
+              entity._resolved_conflicts = [];
+          }
+          entity._resolved_conflicts.push(field);
+
+          delete entity._conflicts[field];
+          setResolvedGroundTruth(newGt);
+
+      } catch(err) {
+          console.error("Failed to log pre-validation HitL:", err);
+          alert("Falha ao registrar a resolução de conflito. Por favor, tente novamente.");
       }
-      entity._resolved_conflicts.push(field);
-
-      delete entity._conflicts[field];
-
-      setResolvedGroundTruth(newGt);
   };
 
   const handleApplyCorrections = async () => {
@@ -125,6 +148,11 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   };
 
   const handleValidate = async () => {
+    if (hasUnresolvedConflicts()) {
+        alert("Por favor, resolva todos os conflitos antes de prosseguir com a validação.");
+        return;
+    }
+
     setIsValidating(true);
     setValidationErrors(null);
     setResolvedErrors(new Set());
@@ -388,10 +416,16 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
             )}
 
             <div className="mt-4 flex justify-between items-center">
-              {!groundTruth && (
+              {!groundTruth ? (
                 <span className="text-sm text-yellow-600 bg-yellow-50 px-2 py-1 rounded border border-yellow-200">
                   Por favor, adicione documentos fonte primeiro.
                 </span>
+              ) : hasUnresolvedConflicts() ? (
+                <span className="text-sm text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
+                  Validação pausada: Por favor, resolva os conflitos nos documentos acima.
+                </span>
+              ) : (
+                <span></span>
               )}
               <button
                 type="button"
