@@ -31,6 +31,11 @@ class PessoaFisica(EntityModel):
                 digits = re.sub(r'[^0-9]', '', val)
                 if len(digits) != 11:
                     raise ValueError("CPF must be 11 digits.")
+            elif attr.key == 'rg':
+                val = str(attr.value)
+                # Permissive alphanumeric cast, stripping common formatting characters like . and -
+                sanitized = re.sub(r'[\.\-]', '', val)
+                attr.value = sanitized
             elif attr.key == 'data_nascimento' or attr.key == 'data_obito':
                 val = str(attr.value)
                 # Expecting basic date formats

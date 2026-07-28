@@ -203,7 +203,13 @@ class MasterProfileConsolidator:
                         else:
                             return False
 
-                    return True
+                    nasc1 = DataNormalizer.normalize_string(get_entity_attr(ent1, "data_nascimento") or "")
+                    nasc2 = DataNormalizer.normalize_string(get_entity_attr(ent2, "data_nascimento") or "")
+
+                    if nasc1 and nasc2 and nasc1 == nasc2:
+                        return True
+
+                    return "POTENTIAL_DUPLICATE"
             return False
 
         elif entity_type == "PESSOA_JURIDICA":
@@ -254,10 +260,14 @@ class MasterProfileConsolidator:
                         attr["key"] = normalize_attribute_key(attr["key"])
 
             matched_idx = -1
+            potential_duplicate_idx = -1
             for i, merged_ent in enumerate(merged_entities):
-                if cls.do_entities_match(entity, merged_ent):
+                match_result = cls.do_entities_match(entity, merged_ent)
+                if match_result is True:
                     matched_idx = i
                     break
+                elif match_result == "POTENTIAL_DUPLICATE":
+                    potential_duplicate_idx = i
 
             if matched_idx == -1:
                 new_ent = copy.deepcopy(entity)
@@ -271,6 +281,18 @@ class MasterProfileConsolidator:
                     current_sources.append(doc_type)
 
                 new_ent["sources"] = current_sources
+
+                if potential_duplicate_idx != -1:
+                    existing_potential = merged_entities[potential_duplicate_idx]
+
+                    if "_potential_duplicates" not in new_ent:
+                        new_ent["_potential_duplicates"] = []
+                    new_ent["_potential_duplicates"].append(existing_potential.get("entity_name", "Unknown Entity"))
+
+                    if "_potential_duplicates" not in existing_potential:
+                        existing_potential["_potential_duplicates"] = []
+                    existing_potential["_potential_duplicates"].append(new_ent.get("entity_name", "Unknown Entity"))
+
                 merged_entities.append(new_ent)
             else:
                 existing = merged_entities[matched_idx]
