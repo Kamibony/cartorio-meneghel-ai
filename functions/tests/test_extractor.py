@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from core.extractor import DocumentExtractor, deduplicate_entities, get_entity_attr
+from core.extractor import DocumentExtractor, get_entity_attr
+from core.consolidator import MasterProfileConsolidator
+deduplicate_entities = MasterProfileConsolidator.deduplicate_entities
 
 class TestExtractor(unittest.TestCase):
 
