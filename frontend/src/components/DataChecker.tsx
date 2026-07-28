@@ -59,8 +59,45 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           if (entity._conflicts && Object.keys(entity._conflicts).length > 0) {
               return true;
           }
+          if (entity._potential_duplicates && entity._potential_duplicates.length > 0) {
+              return true;
+          }
       }
       return false;
+  };
+
+  const resolveDuplicate = async (entityIndex: number) => {
+      if (!resolvedGroundTruth) return;
+
+      const newGt = { ...resolvedGroundTruth };
+      const entity = newGt.entities[entityIndex];
+
+      const documentId = resolvedGroundTruth?.document_id || 'unknown';
+      try {
+          const response = await fetch(`${ENV.apiUrl}/log_hitl_resolution`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              document_id: documentId,
+              field: 'potential_duplicates',
+              expected: '',
+              found: 'confirmed_separate',
+              resolution_type: 'resolved_by_user_pre_validation'
+            })
+          });
+
+          if (!response.ok) {
+              throw new Error(`Falha ao registrar resolução. Status: ${response.status}`);
+          }
+
+          delete entity._potential_duplicates;
+
+          setResolvedGroundTruth(newGt);
+
+      } catch (err: any) {
+          console.error("Error logging duplicate resolution:", err);
+          alert(`Erro ao resolver duplicata: ${err.message}. Por favor, tente novamente.`);
+      }
   };
 
   const resolveConflict = async (entityIndex: number, field: string, value: string) => {
@@ -329,6 +366,31 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                                             </div>
                                         </div>
                                     ));
+                                })}
+                                {resolvedGroundTruth?.entities?.map((entity: any, eIdx: number) => {
+                                    if (!entity._potential_duplicates || entity._potential_duplicates.length === 0) return null;
+                                    return (
+                                        <div key={`dup-${eIdx}`} className="bg-white p-4 rounded border border-yellow-300 mt-4 shadow-sm">
+                                            <h4 className="font-bold text-yellow-900 mb-2">Possíveis Entidades Duplicadas Detectadas</h4>
+                                            <p className="text-sm text-yellow-800 mb-3">
+                                                O sistema encontrou entidades muito semelhantes a <span className="font-semibold">{entity.entity_name || entity.nome}</span>, mas não conseguiu mesclá-las automaticamente.
+                                            </p>
+                                            <div className="bg-yellow-50 p-2 rounded border border-yellow-200 mb-3">
+                                                <p className="text-xs text-yellow-700 font-semibold mb-1">Entidades possivelmente iguais:</p>
+                                                <ul className="list-disc list-inside text-sm text-yellow-900">
+                                                    {entity._potential_duplicates.map((dupName: string, dIdx: number) => (
+                                                        <li key={dIdx}>{dupName}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                            <button
+                                                onClick={() => resolveDuplicate(eIdx)}
+                                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                                            >
+                                                Confirmar como Entidades Separadas
+                                            </button>
+                                        </div>
+                                    );
                                 })}
                             </div>
                         </div>
