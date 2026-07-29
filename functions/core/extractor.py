@@ -311,7 +311,9 @@ class DocumentExtractor:
             # and `estado_civil` domain logic ("Casado(a)") before deterministic diffing occurs.
             raw_gt_entities = ground_truth.get("entities", [])
             from core.consolidator import MasterProfileConsolidator
+            from core.models import validate_entity
             merged_gt_entities = MasterProfileConsolidator.deduplicate_entities(raw_gt_entities)
+            merged_gt_entities = [validate_entity(ent) for ent in merged_gt_entities]
 
             # Store sources for CIN check (using get_entity_attr)
             gt_sources_by_cpf = {}

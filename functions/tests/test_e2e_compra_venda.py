@@ -60,10 +60,12 @@ class TestE2ECompraVenda(unittest.TestCase):
         ]
 
         master_entities = deduplicate_entities(sot_entities)
+        from core.models import validate_entity
+        master_entities = [validate_entity(ent) for ent in master_entities]
         ground_truth = {"entities": master_entities}
 
         marcos = next(e for e in master_entities if get_entity_attr(e, "cpf") == "111.222.333-44")
-        self.assertEqual(get_entity_attr(marcos, "estado_civil"), "Casado")
+        self.assertEqual(get_entity_attr(marcos, "estado_civil"), "Casado(a)")
 
         minuta_text = "VENDEDOR: MARCOS SILVA GOMES, solteiro, RG 5.666.777 SSP/PB, CPF 111.222.333-45. COMPRADOR: RAFAEL COSTA, solteiro, RG 9.888.777 SSP/PB e CPF 888.999.000-11. Imóvel matriculado sob o nº 85.430."
 
@@ -108,7 +110,7 @@ class TestE2ECompraVenda(unittest.TestCase):
 
         cpf_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "cpf" in e["field"] and e["expected"] == "111.222.333-44"), None)
         matricula_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "matricula" in e["field"]), None)
-        estado_civil_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "estado_civil" in e["field"] and e["expected"] == "Casado"), None)
+        estado_civil_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "estado_civil" in e["field"] and e["expected"] == "Casado(a)"), None)
 
         self.assertIsNotNone(cpf_error)
         self.assertIsNotNone(matricula_error)
