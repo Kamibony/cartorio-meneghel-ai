@@ -153,6 +153,9 @@ class DocumentValidator:
         # This matches what audit_draft will do to align the indices.
         raw_entities = self.ground_truth.get("entities", [])
         merged_entities = MasterProfileConsolidator.deduplicate_entities(raw_entities)
+
+        from core.models import validate_entity
+        merged_entities = [validate_entity(ent) for ent in merged_entities]
         self.ground_truth["entities"] = merged_entities
 
         # CIN (New Brazilian ID) Pruning Logic for Dynamic Schema:

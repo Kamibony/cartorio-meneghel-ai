@@ -256,10 +256,12 @@ def merge_entities(req: https_fn.Request) -> https_fn.Response:
             )
 
         from core.consolidator import MasterProfileConsolidator
+        from core.models import validate_entity
         merged_entities = MasterProfileConsolidator.deduplicate_entities(entities)
+        validated_entities = [validate_entity(ent) for ent in merged_entities]
 
         return https_fn.Response(
-            json.dumps({"status": "success", "entities": merged_entities}),
+            json.dumps({"status": "success", "entities": validated_entities}),
             status=200,
             content_type="application/json"
         )
@@ -302,6 +304,15 @@ def format_draft(req: https_fn.Request) -> https_fn.Response:
                 status=400,
                 content_type="application/json"
             )
+
+        import re
+        footer_text = ""
+        # Match "Emolumentos:" explicitly to prevent prematurely cutting off the document
+        # on standard legal clauses that happen to start with the word "Emolumentos"
+        footer_match = re.search(r'(?im)^(\s*emolumentos:\s*R\$[\s\S]*)', raw_text)
+        if footer_match:
+            footer_text = footer_match.group(1)
+            raw_text = raw_text[:footer_match.start()]
 
         from google import genai
         from google.genai import types
@@ -350,6 +361,9 @@ Return the updated final text ONLY, without any markdown formatting or explanati
             lines = formatted_text.split('\n')
             if len(lines) > 2:
                 formatted_text = '\n'.join(lines[1:-1])
+
+        if footer_text:
+            formatted_text = formatted_text.strip() + "\n\n" + footer_text.strip()
 
         return https_fn.Response(
             json.dumps({"status": "success", "formatted_text": formatted_text}),
