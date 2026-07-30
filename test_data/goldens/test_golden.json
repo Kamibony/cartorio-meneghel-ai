@@ -1,0 +1,1 @@
+{"example.pdf": {"entities": [{"entity_name": "Test", "entity_type": "PESSOA_FISICA", "attributes": [{"key": "nome", "value": "Test", "data_type": "STRING"}]}]}}
