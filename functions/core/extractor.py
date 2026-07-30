@@ -73,7 +73,11 @@ class DocumentExtractor:
         elif gcs_uri.lower().endswith(".doc") or gcs_uri.lower().endswith(".docx"):
             mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if gcs_uri.lower().endswith(".docx") else "application/msword"
 
-        file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
+        if gcs_uri.startswith("gs://") or gcs_uri.startswith("https://") or gcs_uri.startswith("http://"):
+            file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
+        else:
+            with open(gcs_uri, "rb") as f:
+                file_part = types.Part.from_bytes(data=f.read(), mime_type=mime_type)
 
         sys_instruct = (
             "You are a legal document extractor. "
