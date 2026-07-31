@@ -1,0 +1,54 @@
+name: LLM Evals
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Python Virtual Environment and Install Dependencies
+        working-directory: ./functions
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Setup GCP Auth
+        env:
+          SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
+        run: |
+          if [ -n "$SA_KEY" ]; then
+            echo "$SA_KEY" > /tmp/firebase-key.json
+            gcloud auth activate-service-account --key-file=/tmp/firebase-key.json
+            gcloud services enable aiplatform.googleapis.com --project "$FIREBASE_PROJECT_ID"
+          else
+            echo "Skipping GCP Auth because FIREBASE_SERVICE_ACCOUNT secret is not set."
+          fi
+
+      - name: Run LLM Evals
+        working-directory: ./functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-key.json
+        run: |
+          source venv/bin/activate
+          if [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            python -m unittest tests.test_llm_evals
+          else
+            echo "Skipping tests because GOOGLE_APPLICATION_CREDENTIALS is not present."
+          fi
