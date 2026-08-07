@@ -47,7 +47,7 @@ service cloud.firestore {
         allow create: if belongsToCartorio(cartorioId);
 
         // Only admins belonging to the cartorio can read audit logs
-        allow read: if belongsToCartorio(cartorioId) && hasRole('admin');
+        allow read: if belongsToCartorio(cartorioId) && (hasRole('cartorio_admin') || hasRole('super_admin'));
 
         // Audit logs are immutable (no update or delete)
         allow update, delete: if false;

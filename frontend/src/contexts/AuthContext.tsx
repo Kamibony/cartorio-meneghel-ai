@@ -9,6 +9,7 @@ import type { User as FirestoreUser } from '../types/firestore';
 interface AuthContextType {
   currentUser: FirebaseUser | null;
   cartorioId: string | null;
+  userRole: string | null;
   isLoading: boolean;
 }
 
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [cartorioId, setCartorioId] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -27,16 +29,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
-            setCartorioId((userDoc.data() as FirestoreUser).cartorio_id);
+            const data = userDoc.data() as FirestoreUser;
+            setCartorioId(data.cartorio_id);
+            setUserRole(data.role);
           } else {
             setCartorioId('default_cartorio'); // Fallback
+            setUserRole('escrevente');
           }
         } catch (e) {
-          console.error("Failed to load user cartorio context", e);
+          console.error("Failed to load user context", e);
           setCartorioId('default_cartorio');
+          setUserRole('escrevente');
         }
       } else {
         setCartorioId(null);
+        setUserRole(null);
       }
 
       setIsLoading(false);
@@ -48,6 +55,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const value = {
     currentUser,
     cartorioId,
+    userRole,
     isLoading
   };
 
