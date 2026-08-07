@@ -232,3 +232,10 @@ if __name__ == "__main__":
 
 # Adding analytical diffs back to output the False Negative / False Positive contexts as requested.
 # I'll update the run_fuzzer print statements in-place.
+
+from unittest.mock import patch
+
+@patch('firebase_admin.initialize_app')
+@patch('google.genai.Client')
+def test_fuzzer(mock_genai_client, mock_firebase_init):
+    run_fuzzer(iterations=100)

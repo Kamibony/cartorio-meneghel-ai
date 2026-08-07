@@ -1,0 +1,34 @@
+name: Fuzzer Stress Tests
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  fuzzer-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./functions
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt Faker deepdiff pytest
+
+      - name: Run Fuzzer Tests
+        working-directory: ./functions
+        env:
+          FIREBASE_PROJECT_ID: 'dummy-project'
+          VERTEX_AI_LOCATION: 'us-central1'
+        run: |
+          source venv/bin/activate
+          pytest tests/fuzzer.py -v -s
