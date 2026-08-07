@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
+import { useCartorio } from '../hooks/useCartorio';
 import { ENV } from '../config/env';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
@@ -20,6 +21,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const { uploadAndExtract } = useDocumentUpload();
+  const { cartorioId } = useCartorio();
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [objectUrls, setObjectUrls] = useState<Record<string, string>>({});
@@ -189,7 +191,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
     }, 1000);
 
     try {
-      const extractedData = await uploadAndExtract(fileToProcess.file, fileToProcess.documentType);
+      const extractedData = await uploadAndExtract(fileToProcess.file, fileToProcess.documentType, cartorioId || 'default_cartorio');
 
       setFiles(prev => {
         const newFiles = prev.map(f =>

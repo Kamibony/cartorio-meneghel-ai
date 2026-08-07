@@ -1,34 +1,54 @@
 import { useState } from 'react';
 import { ref, uploadBytes } from 'firebase/storage';
-import { storage } from '../utils/firebase';
+import { collection, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
+import { storage, db, auth } from '../utils/firebase';
 import { ENV } from '../config/env';
+import type { Minuta } from '../types/firestore';
 
 export function useDocumentUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const uploadAndExtract = async (file: File, documentType: string = 'id_card') => {
+  const uploadAndExtract = async (file: File, documentType: string = 'id_card', cartorioId: string) => {
     setIsUploading(true);
     setIsExtracting(false);
     setError(null);
     let extractedData = null;
+    let minutaDocRef = null;
 
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('User must be authenticated to upload and extract documents');
+      }
+
       // 1. Upload to Firebase Storage
       const storageRef = ref(storage, `scans/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
-      // Wait for it to be fully uploaded, we only need the gs:// URI
 
       // Calculate gs:// URI
       const bucket = storageRef.bucket;
       const fullPath = storageRef.fullPath;
       const gcsUri = `gs://${bucket}/${fullPath}`;
 
+      // 2. Initialize Minuta in Firestore
+      const minutasRef = collection(db, 'cartorios', cartorioId, 'minutas');
+      const initialMinuta: Minuta = {
+        cartorio_id: cartorioId,
+        status: 'processing',
+        raw_pdf_gcs_uri: gcsUri,
+        document_type: documentType,
+        createdBy: currentUser.uid,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
+      minutaDocRef = await addDoc(minutasRef, initialMinuta);
+
       setIsUploading(false);
       setIsExtracting(true);
 
-      // 2. Call backend extract_document_data API
+      // 3. Call backend extract_document_data API
       const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/extract_document_data`;
 
@@ -40,6 +60,7 @@ export function useDocumentUpload() {
         body: JSON.stringify({
           gcs_uri: gcsUri,
           document_type: documentType,
+          // minuta_id: minutaDocRef.id, // we might pass this to the backend in the future
         }),
       });
 
@@ -59,9 +80,30 @@ export function useDocumentUpload() {
 
       extractedData = data.data;
 
+      // 4. Update Minuta with extracted data
+      if (minutaDocRef) {
+        await updateDoc(doc(db, 'cartorios', cartorioId, 'minutas', minutaDocRef.id), {
+          status: 'hitl_required', // Assume it needs HitL or let backend decide
+          ai_extracted_data: extractedData,
+          updatedAt: Timestamp.now(),
+        });
+      }
+
     } catch (err: any) {
       console.error('Upload/Extraction error:', err);
       setError(err.message || 'An unknown error occurred');
+
+      // Optionally update the minuta state to 'error'
+      if (minutaDocRef) {
+        try {
+           await updateDoc(doc(db, 'cartorios', cartorioId, 'minutas', minutaDocRef.id), {
+             status: 'error',
+             updatedAt: Timestamp.now(),
+           });
+        } catch (updateErr) {
+           console.error('Failed to update minuta error state:', updateErr);
+        }
+      }
       throw err;
     } finally {
       setIsUploading(false);

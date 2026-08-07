@@ -1,9 +1,13 @@
 import { initializeApp } from 'firebase/app';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { ENV } from '../config/env';
 
 export const app = initializeApp(ENV.firebase);
 export const storage = getStorage(app);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
 
 // Strict emulator isolation pattern
 if (ENV.isDev) {
@@ -14,10 +18,9 @@ if (ENV.isDev) {
 
         console.info(`[Dev Mode] Connecting to Firebase Emulators on ${host}...`);
 
-        // Connect storage emulator.
-        // Default Storage Emulator port is 9199.
+        // Connect emulators
         connectStorageEmulator(storage, host, 9199);
-
-        // If Firestore or Auth emulators are added in the future, connect them here.
+        connectFirestoreEmulator(db, host, 8080);
+        connectAuthEmulator(auth, `http://${host}:9099`);
     }
 }
