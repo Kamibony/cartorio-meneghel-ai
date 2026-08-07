@@ -3,6 +3,7 @@ import { useDocumentUpload } from '../hooks/useDocumentUpload';
 import { useCartorio } from '../hooks/useCartorio';
 import { ENV } from '../config/env';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { auth } from '../utils/firebase';
 
 interface DocumentViewerProps {
   onDataExtracted: (data: any) => void;
@@ -79,10 +80,14 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
         try {
             const apiUrl = ENV.apiUrl;
             const endpoint = `${apiUrl}/merge_entities`;
+            const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'X-Cartorio-ID': cartorioId || ''
                 },
                 body: JSON.stringify({ entities: allEntities }),
             });
