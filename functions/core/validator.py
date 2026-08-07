@@ -89,6 +89,64 @@ class DataNormalizer:
         return re.sub(r'\s+', ' ', text).strip()
 
     @staticmethod
+    def normalize_field(key: str, value: str) -> str:
+        """Tiered Canonicalization Architecture based on field type."""
+        if not value:
+            return ""
+
+        value = str(value)
+        key_lower = key.lower()
+
+        # Tier 1: Strict Fields (Zero-Tolerance)
+        strict_fields = ["entity_name", "nome", "cpf", "cnpj", "rg", "matricula", "itbi_valor", "itcd_valor"]
+        if key_lower in strict_fields or "data" in key_lower:
+            if key_lower in ["cpf", "cnpj"]:
+                return DataNormalizer.normalize_cpf_cnpj(value)
+            elif key_lower in ["rg", "matricula"]:
+                return DataNormalizer.normalize_digits(value)
+            elif "data" in key_lower:
+                return DataNormalizer.normalize_date(value)
+            elif key_lower in ["itbi_valor", "itcd_valor"]:
+                val = re.sub(r'[^0-9A-Z]', '', value.upper())
+                return val
+            else: # entity_name, nome
+                val = value.upper()
+                val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
+                val = re.sub(r'[^A-Z0-9 ]', '', val)
+                return re.sub(r'\s+', ' ', val).strip()
+
+        # Tier 2: Descriptive Fields (The Canonicalizer)
+        descriptive_fields = ["endereco", "profissao"]
+        if key_lower in descriptive_fields:
+            val = value.upper()
+
+            # Common abbreviations translation
+            abbrevs = {
+                r'\bAV\.\b': 'AVENIDA',
+                r'\bAV\b': 'AVENIDA',
+                r'\bR\.\b': 'RUA',
+                r'\bR\b': 'RUA',
+                r'\bS/N\b': 'SEM NUMERO',
+                r'\bS\.N\.\b': 'SEM NUMERO'
+            }
+            for pattern, repl in abbrevs.items():
+                val = re.sub(pattern, repl, val)
+
+            # Strip all punctuation
+            val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
+            val = re.sub(r'[^A-Z0-9 ]', '', val)
+
+            # Normalize whitespace
+            return re.sub(r'\s+', ' ', val).strip()
+
+        # Tier 3: Enums/Roles
+        if key_lower == "papel":
+            return value.upper().strip()
+
+        # Fallback to general normalization
+        return DataNormalizer.normalize_string(value)
+
+    @staticmethod
     def normalize_date(text: str) -> str:
         """Attempt to parse various date formats into YYYY-MM-DD."""
         if not text:
@@ -208,18 +266,9 @@ class DocumentValidator:
             if error.category == "VALUE_MISMATCH":
                 # Normalize values to check for false positive mismatches (case, accent, gender suffix)
                 field_base = error.field.split('.')[-1]
-                if field_base == "cpf":
-                    norm_expected = normalize_cpf_cnpj(error.expected)
-                    norm_found = normalize_cpf_cnpj(error.found_in_text)
-                elif field_base == "rg":
-                    norm_expected = normalize_digits(error.expected)
-                    norm_found = normalize_digits(error.found_in_text)
-                elif field_base in ["data_nascimento", "data_obito"]:
-                    norm_expected = normalize_date(error.expected)
-                    norm_found = normalize_date(error.found_in_text)
-                else:
-                    norm_expected = normalize_string(error.expected)
-                    norm_found = normalize_string(error.found_in_text)
+                # Use tiered normalize_field to evaluate equality properly
+                norm_expected = DataNormalizer.normalize_field(field_base, error.expected)
+                norm_found = DataNormalizer.normalize_field(field_base, error.found_in_text)
 
                 if norm_expected == norm_found and norm_expected != "":
                     logger.warning(f"False positive filtered: '{error.expected}' vs '{error.found_in_text}' resolved to '{norm_expected}'.")

@@ -441,6 +441,33 @@ class DocumentExtractor:
                     })
                     continue
 
+                # Check entity_name explicitly (Tier 1)
+                gt_name = gt_ent.get("entity_name")
+                draft_name = matched_draft_ent.get("entity_name")
+                if gt_name and draft_name:
+                    norm_gt_name = DataNormalizer.normalize_field("entity_name", str(gt_name))
+                    norm_draft_name = DataNormalizer.normalize_field("entity_name", str(draft_name))
+                    if norm_gt_name != norm_draft_name:
+                        exact_substring = str(draft_name)
+                        try:
+                            escaped_val = re.escape(str(draft_name))
+                            match = re.search(escaped_val, draft_text, re.IGNORECASE)
+                            if match:
+                                exact_substring = match.group(0)
+                        except Exception:
+                            pass
+
+                        discrepancies.append({
+                            "field": f"entities[{i}].entity_name",
+                            "category": "VALUE_MISMATCH",
+                            "message": f"Divergência de valor para 'Nome da Entidade'. Esperado '{gt_name}', encontrado '{draft_name}'.",
+                            "expected": str(gt_name),
+                            "found": str(draft_name),
+                            "found_in_text": exact_substring,
+                            "requires_human_review": False,
+                            "entity_name": nome_entidade
+                        })
+
                 # Intersection Diffing: only check attributes that exist in Ground Truth
                 # (And ensure we don't leak 'sources', '_source_document_type', etc. - which aren't in attributes anyway)
                 for gt_attr in gt_ent.get("attributes", []):
@@ -476,18 +503,8 @@ class DocumentExtractor:
                             "entity_name": nome_entidade
                         })
                     else:
-                        if data_type == "IDENTIFIER" or key in ["cpf", "cnpj", "rg", "cep", "matricula"]:
-                            norm_expected = DataNormalizer.normalize_cpf_cnpj(str(expected_val)) if key in ["cpf", "cnpj"] else DataNormalizer.normalize_digits(str(expected_val))
-                            norm_draft = DataNormalizer.normalize_cpf_cnpj(str(draft_val)) if key in ["cpf", "cnpj"] else DataNormalizer.normalize_digits(str(draft_val))
-                        elif data_type == "DATE" or "data" in key:
-                            norm_expected = DataNormalizer.normalize_date(str(expected_val))
-                            norm_draft = DataNormalizer.normalize_date(str(draft_val))
-                        elif data_type == "ALPHANUMERIC":
-                            norm_expected = DataNormalizer.normalize_string(str(expected_val))
-                            norm_draft = DataNormalizer.normalize_string(str(draft_val))
-                        else:
-                            norm_expected = DataNormalizer.normalize_string(str(expected_val))
-                            norm_draft = DataNormalizer.normalize_string(str(draft_val))
+                        norm_expected = DataNormalizer.normalize_field(key, str(expected_val))
+                        norm_draft = DataNormalizer.normalize_field(key, str(draft_val))
 
                         if norm_expected != norm_draft:
                             exact_substring = str(draft_val)

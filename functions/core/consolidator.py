@@ -90,18 +90,8 @@ class MasterProfileConsolidator:
                 existing_attrs[key] = incoming_attr
                 continue
 
-            if data_type == "IDENTIFIER" or key in ["cpf", "cnpj", "rg", "cep", "matricula"]:
-                norm_incoming = DataNormalizer.normalize_digits(incoming_val)
-                norm_existing = DataNormalizer.normalize_digits(existing_val)
-            elif data_type == "DATE" or "data" in key:
-                norm_incoming = DataNormalizer.normalize_date(incoming_val)
-                norm_existing = DataNormalizer.normalize_date(existing_val)
-            elif data_type == "ALPHANUMERIC":
-                norm_incoming = DataNormalizer.normalize_string(incoming_val)
-                norm_existing = DataNormalizer.normalize_string(existing_val)
-            else:
-                norm_incoming = DataNormalizer.normalize_string(incoming_val)
-                norm_existing = DataNormalizer.normalize_string(existing_val)
+            norm_incoming = DataNormalizer.normalize_field(key, incoming_val)
+            norm_existing = DataNormalizer.normalize_field(key, existing_val)
 
             if norm_incoming != norm_existing:
                 if key == "nome" and (norm_incoming in norm_existing or norm_existing in norm_incoming):
