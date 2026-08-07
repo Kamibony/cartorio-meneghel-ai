@@ -42,20 +42,22 @@ class FuzzerMetrics:
             print(f"[{act}] Total: {total} | Pass: {metrics['pass']} ({pass_rate:.2f}%) | Fail: {metrics['fail']}")
         print("-----------------------------\n")
 
-def mutate_string(value: str) -> str:
+def mutate_string(value: str) -> tuple[str, str]:
     if not value or len(value) < 3:
-        return value
+        return value, "NONE"
     chars = list(value)
     mutation_type = random.choice(['swap', 'drop', 'lower'])
     if mutation_type == 'swap':
         idx = random.randint(0, len(chars) - 2)
         chars[idx], chars[idx+1] = chars[idx+1], chars[idx]
+        return "".join(chars), "TYPO"
     elif mutation_type == 'drop':
         idx = random.randint(0, len(chars) - 1)
         chars.pop(idx)
+        return "".join(chars), "TYPO"
     elif mutation_type == 'lower':
-        return value.lower()
-    return "".join(chars)
+        return value.lower(), "FORMATTING"
+    return "".join(chars), "TYPO"
 
 def create_pydantic_entity(entity_type: str, name: str, attrs: dict) -> dict:
     attributes = [Attribute(key=k, value=v, data_type="STRING") for k, v in attrs.items()]
@@ -145,8 +147,10 @@ def mutate_draft(draft: dict) -> list[str]:
     for entity in draft.get("entities", []):
         # 30% chance to mutate the entity name
         if random.random() < 0.3:
-            entity["entity_name"] = mutate_string(entity["entity_name"])
-            mutation_types.add("TYPO")
+            mutated_val, mut_type = mutate_string(entity["entity_name"])
+            if mut_type != "NONE":
+                entity["entity_name"] = mutated_val
+                mutation_types.add(mut_type)
 
         for attr in entity.get("attributes", []):
             if random.random() < 0.3:
@@ -164,8 +168,10 @@ def mutate_draft(draft: dict) -> list[str]:
                         attr["value"] = val.replace("/", "-")
                         mutation_types.add("FORMATTING")
                 else:
-                    attr["value"] = mutate_string(val)
-                    mutation_types.add("TYPO")
+                    mutated_val, mut_type = mutate_string(val)
+                    if mut_type != "NONE":
+                        attr["value"] = mutated_val
+                        mutation_types.add(mut_type)
 
     return list(mutation_types)
 
