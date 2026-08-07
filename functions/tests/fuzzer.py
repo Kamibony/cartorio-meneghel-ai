@@ -149,6 +149,9 @@ def mutate_draft(draft: dict) -> list[str]:
         if random.random() < 0.3:
             mutated_val, mut_type = mutate_string(entity["entity_name"])
             if mut_type != "NONE":
+                from core.validator import DataNormalizer
+                if DataNormalizer.normalize_field("entity_name", entity["entity_name"]) == DataNormalizer.normalize_field("entity_name", mutated_val):
+                    mut_type = "FORMATTING"
                 entity["entity_name"] = mutated_val
                 mutation_types.add(mut_type)
 
@@ -170,6 +173,9 @@ def mutate_draft(draft: dict) -> list[str]:
                 else:
                     mutated_val, mut_type = mutate_string(val)
                     if mut_type != "NONE":
+                        from core.validator import DataNormalizer
+                        if DataNormalizer.normalize_field(attr["key"], val) == DataNormalizer.normalize_field(attr["key"], mutated_val):
+                            mut_type = "FORMATTING"
                         attr["value"] = mutated_val
                         mutation_types.add(mut_type)
 
@@ -203,7 +209,7 @@ def run_fuzzer(iterations: int = 100):
 
         # Serialize mutated draft to a string.
         # The mocked extractor will just deserialize this JSON back into dicts.
-        draft_text = json.dumps(draft)
+        draft_text = json.dumps(draft, ensure_ascii=False)
 
         validator = DocumentValidator(ground_truth, draft_text)
         errors = validator.validate()
