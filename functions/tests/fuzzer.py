@@ -183,7 +183,9 @@ def mutate_draft(draft: dict) -> list[str]:
 
 def mock_extract_from_text(self, text: str) -> dict:
     import json
-    return json.loads(text)
+    # Because we replace \n with actual newlines in draft_text for the validator's regex to work,
+    # we must escape them back before json.loads parses it to prevent JSONDecodeError.
+    return json.loads(text.replace("\n", "\\n"))
 
 def run_fuzzer(iterations: int = 100):
     metrics = FuzzerMetrics()
@@ -209,7 +211,7 @@ def run_fuzzer(iterations: int = 100):
 
         # Serialize mutated draft to a string.
         # The mocked extractor will just deserialize this JSON back into dicts.
-        draft_text = json.dumps(draft, ensure_ascii=False)
+        draft_text = json.dumps(draft, ensure_ascii=False).replace("\\n", "\n")
 
         validator = DocumentValidator(ground_truth, draft_text)
         errors = validator.validate()
