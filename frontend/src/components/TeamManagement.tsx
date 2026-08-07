@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import type { User } from '../types/firestore';
+import type { User, UserRole } from '../types/firestore';
 
 const TeamManagement: React.FC = () => {
   const { cartorioId } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'escrevente' | 'cartorio_admin'>('escrevente');
+  const [inviteRole, setInviteRole] = useState<UserRole>('escrevente');
   const [isInviting, setIsInviting] = useState(false);
   const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null);
 
@@ -101,7 +101,7 @@ const TeamManagement: React.FC = () => {
             <select
               id="role"
               value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as 'escrevente' | 'cartorio_admin')}
+              onChange={(e) => setInviteRole(e.target.value as UserRole)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="escrevente">Escrevente</option>

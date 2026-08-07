@@ -4,7 +4,7 @@ import logging
 from firebase_functions import https_fn, options
 from firebase_admin import auth, firestore
 from core.firebase_utils import _init_firebase
-from main import global_cors
+from core.config import global_cors
 
 logger = logging.getLogger(__name__)
 
