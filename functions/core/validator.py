@@ -112,7 +112,7 @@ class DataNormalizer:
             else: # entity_name, nome
                 val = value.upper()
                 val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
-                val = re.sub(r'[^A-Z0-9 ]', '', val)
+                val = re.sub(r'[^A-Z0-9]', ' ', val)
                 return re.sub(r'\s+', ' ', val).strip()
 
         # Tier 2: Descriptive Fields (The Canonicalizer)
@@ -132,9 +132,9 @@ class DataNormalizer:
             for pattern, repl in abbrevs.items():
                 val = re.sub(pattern, repl, val)
 
-            # Strip all punctuation
+            # Strip all punctuation, replace with space to preserve word boundaries
             val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
-            val = re.sub(r'[^A-Z0-9 ]', '', val)
+            val = re.sub(r'[^A-Z0-9]', ' ', val)
 
             # Normalize whitespace
             return re.sub(r'\s+', ' ', val).strip()
