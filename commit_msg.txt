@@ -1,0 +1,9 @@
+feat(rbac): implement secure B2B RBAC architecture and fuzzer fix
+
+This commit completes the B2B SaaS RBAC implementation and resolves a false negative in the test suite:
+
+- CI/CD: Injected missing VITE_FIREBASE_* environment variables into deploy.yml.
+- Security: Updated firestore.rules to enforce custom roles ('super_admin', 'cartorio_admin', 'escrevente') and strict 'cartorio_id' isolation.
+- Backend: Implemented the 'inviteEmployee' Cloud Function for secure server-side user invitation via Firebase Auth.
+- Frontend: Updated AuthContext to track 'userRole', integrated the 'TeamManagement' UI for cartorio_admin users, and added role-based conditional routing.
+- Tests: Fixed the 'DataNormalizer' fuzzer bug where 'json.dumps' was escaping newlines, causing the hallucination filter to erroneously fail during text matching.

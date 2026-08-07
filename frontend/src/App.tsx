@@ -4,10 +4,12 @@ import DocumentViewer from './components/DocumentViewer';
 import DataChecker from './components/DataChecker';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
+import TeamManagement from './components/TeamManagement';
 
 function Dashboard() {
   const [groundTruth, setGroundTruth] = useState<any>(null);
-  const { currentUser, isLoading } = useAuth();
+  const [currentView, setCurrentView] = useState<'dashboard' | 'team_management'>('dashboard');
+  const { currentUser, userRole, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -28,7 +30,25 @@ function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Painel Cartório AI</h1>
           <p className="text-sm text-gray-500 mt-1 font-medium">Motor de Verificação de Dados Sem Alucinações</p>
         </div>
-        <div className="flex items-center space-x-4">
+
+        <div className="flex items-center space-x-6">
+          {userRole === 'cartorio_admin' && (
+            <nav className="flex space-x-4">
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className={`text-sm font-medium ${currentView === 'dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Validação
+              </button>
+              <button
+                onClick={() => setCurrentView('team_management')}
+                className={`text-sm font-medium ${currentView === 'team_management' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Gestão de Equipe
+              </button>
+            </nav>
+          )}
+
           <div className="text-sm text-gray-600">
             {currentUser.email}
           </div>
@@ -39,14 +59,22 @@ function Dashboard() {
         </div>
       </header>
 
-      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-88px)] overflow-hidden">
-        <section className="h-full overflow-hidden">
-          <DocumentViewer onDataExtracted={setGroundTruth} />
-        </section>
+      <main className="flex-1 p-6 h-[calc(100vh-88px)] overflow-hidden">
+        {currentView === 'dashboard' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+            <section className="h-full overflow-hidden">
+              <DocumentViewer onDataExtracted={setGroundTruth} />
+            </section>
 
-        <section className="h-full overflow-hidden">
-          <DataChecker groundTruth={groundTruth} />
-        </section>
+            <section className="h-full overflow-hidden">
+              <DataChecker groundTruth={groundTruth} />
+            </section>
+          </div>
+        ) : (
+          <div className="h-full overflow-auto">
+            <TeamManagement />
+          </div>
+        )}
       </main>
     </div>
   );

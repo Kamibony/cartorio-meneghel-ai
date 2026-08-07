@@ -1,0 +1,90 @@
+import os
+import json
+import logging
+from firebase_functions import https_fn, options
+from firebase_admin import auth, firestore
+from core.firebase_utils import _init_firebase
+from main import global_cors
+
+logger = logging.getLogger(__name__)
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
+    """
+    Invites a new Escrevente or Cartorio Admin by a Cartorio Admin.
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(
+            json.dumps({"error": "Unauthorized"}),
+            status=401,
+            content_type="application/json"
+        )
+
+    token = auth_header.split("Bearer ")[1]
+    _init_firebase()
+
+    try:
+        decoded_token = auth.verify_id_token(token)
+        caller_uid = decoded_token.get("uid")
+
+        db = firestore.client()
+        caller_doc = db.collection("users").document(caller_uid).get()
+        if not caller_doc.exists:
+            return https_fn.Response(json.dumps({"error": "Caller user not found in database"}), status=403)
+
+        caller_data = caller_doc.to_dict()
+        caller_role = caller_data.get("role")
+        caller_cartorio = caller_data.get("cartorio_id")
+
+        if caller_role not in ["super_admin", "cartorio_admin"]:
+            return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)
+
+        data = req.get_json()
+        if not data or not data.get("email"):
+            return https_fn.Response(json.dumps({"error": "Missing email in payload"}), status=400)
+
+        email = data.get("email")
+        role = data.get("role", "escrevente") # Default to escrevente
+
+        if role not in ["escrevente", "cartorio_admin"]:
+            return https_fn.Response(json.dumps({"error": "Invalid role requested"}), status=400)
+
+        # Create user in Firebase Auth
+        new_user = auth.create_user(
+            email=email,
+            email_verified=False
+        )
+
+        # Send password reset link
+        link = auth.generate_password_reset_link(email)
+        # In a real app we'd email this link using SendGrid or similar.
+        # For this exercise, we can return the link or assume it's handled.
+
+        # Create user document
+        db.collection("users").document(new_user.uid).set({
+            "uid": new_user.uid,
+            "email": email,
+            "role": role,
+            "cartorio_id": caller_cartorio,
+            "status": "active",
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        })
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "message": "User invited successfully", "uid": new_user.uid, "reset_link": link}),
+            status=200,
+            content_type="application/json"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in inviteEmployee: {e}", exc_info=True)
+        return https_fn.Response(json.dumps({"error": str(e)}), status=500)

@@ -216,6 +216,8 @@ def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
+from admin import inviteEmployee
+
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def api_status(req: https_fn.Request) -> https_fn.Response:
     """Returns the API status."""
