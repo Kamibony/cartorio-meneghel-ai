@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { ref, uploadBytes } from 'firebase/storage';
 import { collection, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
-import { storage, db, auth } from '../utils/firebase';
+import { storage, db } from '../utils/firebase';
 import { ENV } from '../config/env';
 import type { Minuta } from '../types/firestore';
+import { useAuth } from '../contexts/AuthContext';
 
 export function useDocumentUpload() {
+  const { currentUser } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,6 @@ export function useDocumentUpload() {
     let minutaDocRef = null;
 
     try {
-      const currentUser = auth.currentUser;
       if (!currentUser) {
         throw new Error('User must be authenticated to upload and extract documents');
       }
@@ -52,10 +53,13 @@ export function useDocumentUpload() {
       const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/extract_document_data`;
 
+      const token = await currentUser.getIdToken();
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Cartorio-ID': cartorioId
         },
         body: JSON.stringify({
           gcs_uri: gcsUri,

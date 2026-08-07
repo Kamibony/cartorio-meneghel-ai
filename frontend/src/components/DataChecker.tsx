@@ -3,6 +3,9 @@ import { useDocumentUpload } from '../hooks/useDocumentUpload';
 import { useCartorio } from '../hooks/useCartorio';
 import { ENV } from '../config/env';
 import { diff_match_patch } from 'diff-match-patch';
+import { auth } from '../utils/firebase';
+import InteractiveDiffWidget from './InteractiveDiffWidget';
+import type { DiffBlock, ResolutionStatus } from './InteractiveDiffWidget';
 
 
 // Type definitions for the expected API response
@@ -40,6 +43,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const [resolvingFields, setResolvingFields] = useState<Set<string>>(new Set());
   const [serverError, setServerError] = useState<string | null>(null);
   const [correctedText, setCorrectedText] = useState<string | null>(null);
+  const [interactiveDiffBlocks, setInteractiveDiffBlocks] = useState<DiffBlock[] | null>(null);
   const [viewMode, setViewMode] = useState<'validation' | 'visual_review' | 'corrected'>('validation');
 
   const [resolvedGroundTruth, setResolvedGroundTruth] = useState<any>(null);
@@ -76,9 +80,14 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
       const documentId = resolvedGroundTruth?.document_id || 'unknown';
       try {
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
           const response = await fetch(`${ENV.apiUrl}/log_hitl_resolution`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+              'X-Cartorio-ID': cartorioId || ''
+            },
             body: JSON.stringify({
               document_id: documentId,
               field: 'potential_duplicates',
@@ -110,9 +119,14 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
       const documentId = resolvedGroundTruth?.document_id || 'unknown';
       try {
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
           const response = await fetch(`${ENV.apiUrl}/log_hitl_resolution`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+              'X-Cartorio-ID': cartorioId || ''
+            },
             body: JSON.stringify({
               document_id: documentId,
               field: field,
@@ -156,10 +170,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
     try {
       const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/format-draft`;
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Cartorio-ID': cartorioId || ''
         },
         body: JSON.stringify({
           raw_text: textToFix,
@@ -178,6 +195,90 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       }
 
       setCorrectedText(data.formatted_text);
+
+      // Parse blocks
+      const dmp = new diff_match_patch();
+      const tokenize = (text: string) => text.match(/([\s]+|[\d][\d\.\-\/]*[\d]|[\wÀ-ÿ]+|[^\s\wÀ-ÿ]+)/g) || [];
+      const tokens1 = tokenize(textToFix);
+      const tokens2 = tokenize(data.formatted_text);
+
+      const tokenArray: string[] = [];
+      const tokenHash: Record<string, number> = {};
+
+      const encode = (tokens: string[]) => {
+          let chars = "";
+          for (let i = 0; i < tokens.length; i++) {
+              const t = tokens[i];
+              if (!(t in tokenHash)) {
+                  tokenArray.push(t);
+                  tokenHash[t] = tokenArray.length - 1;
+              }
+              chars += String.fromCharCode(tokenHash[t] + 0xE000); // Use private use area
+          }
+          return chars;
+      };
+
+      const chars1 = encode(tokens1);
+      const chars2 = encode(tokens2);
+
+      const diffs = dmp.diff_main(chars1, chars2, false);
+      dmp.diff_cleanupSemantic(diffs);
+
+      // Decode and cluster into blocks
+      const newBlocks: DiffBlock[] = [];
+
+      for (let i = 0; i < diffs.length; i++) {
+          const [op, chars] = diffs[i];
+          let text = "";
+          for (let j = 0; j < chars.length; j++) {
+              text += tokenArray[chars.charCodeAt(j) - 0xE000];
+          }
+
+          if (op === 0) { // Equal
+             newBlocks.push({
+                 id: `block-${i}`,
+                 originalText: text,
+                 correctedText: text,
+                 status: 'pending',
+                 isDiff: false
+             });
+          } else if (op === -1) { // Delete
+              // Check if next is an insert (replacement)
+              if (i + 1 < diffs.length && diffs[i+1][0] === 1) {
+                  const [, nextChars] = diffs[i+1];
+                  let nextText = "";
+                  for (let j = 0; j < nextChars.length; j++) {
+                      nextText += tokenArray[nextChars.charCodeAt(j) - 0xE000];
+                  }
+                  newBlocks.push({
+                      id: `block-${i}-repl`,
+                      originalText: text,
+                      correctedText: nextText,
+                      status: 'pending',
+                      isDiff: true
+                  });
+                  i++; // skip next
+              } else { // Just delete
+                  newBlocks.push({
+                      id: `block-${i}-del`,
+                      originalText: text,
+                      correctedText: "",
+                      status: 'pending',
+                      isDiff: true
+                  });
+              }
+          } else if (op === 1) { // Insert
+              newBlocks.push({
+                  id: `block-${i}-ins`,
+                  originalText: "",
+                  correctedText: text,
+                  status: 'pending',
+                  isDiff: true
+              });
+          }
+      }
+
+      setInteractiveDiffBlocks(newBlocks);
       setViewMode('visual_review');
     } catch (error: any) {
       setServerError(error.message || 'Falha ao conectar com o serviço de formatação.');
@@ -225,10 +326,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/validate_document_text`;
 
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Cartorio-ID': cartorioId || ''
         },
         body: JSON.stringify({
           ground_truth: resolvedGroundTruth,
@@ -263,6 +367,34 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
   const isButtonDisabled = isValidating || isUploading || isExtracting || !groundTruth || hasUnresolvedConflicts();
   const isProcessing = isValidating || isUploading || isExtracting;
 
+  const handleResolveDiffBlock = (id: string, status: ResolutionStatus, editedText?: string) => {
+    setInteractiveDiffBlocks(prev => {
+        if (!prev) return prev;
+        return prev.map(block => {
+            if (block.id === id) {
+                return { ...block, status, userEditedText: editedText };
+            }
+            return block;
+        });
+    });
+  };
+
+  const computeFinalText = () => {
+    if (!interactiveDiffBlocks) return correctedText || '';
+
+    return interactiveDiffBlocks.map(block => {
+        if (!block.isDiff) return block.originalText;
+
+        switch (block.status) {
+            case 'use_pdf': return block.correctedText;
+            case 'keep_minuta': return block.originalText;
+            case 'edited': return block.userEditedText || block.correctedText;
+            case 'pending': return block.correctedText; // default to PDF if unhandled
+            default: return block.correctedText;
+        }
+    }).join('');
+  };
+
   const handleMarkAsResolved = async (error: ValidationError) => {
     try {
       setResolvingFields(prev => {
@@ -276,10 +408,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
       const documentId = groundTruth?.document_id || 'unknown';
 
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Cartorio-ID': cartorioId || ''
         },
         body: JSON.stringify({
           document_id: documentId,
@@ -556,78 +691,32 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
              )}
           </div>
 
-          {viewMode === 'visual_review' && correctedText && (
+          {viewMode === 'visual_review' && interactiveDiffBlocks && (
             <div className="flex-1 flex flex-col p-4 border border-gray-300 bg-white rounded-md overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed">
-              {(() => {
-                const currentText = inputType === 'upload' && cachedDraftText ? cachedDraftText.text : typedText;
-
-                const dmp = new diff_match_patch();
-
-                const diffWordMode = (text1: string, text2: string) => {
-                    const tokenize = (text: string) => text.match(/([\s]+|[\d][\d\.\-\/]*[\d]|[\wÀ-ÿ]+|[^\s\wÀ-ÿ]+)/g) || [];
-                    const tokens1 = tokenize(text1);
-                    const tokens2 = tokenize(text2);
-
-                    const tokenArray: string[] = [];
-                    const tokenHash: Record<string, number> = {};
-
-                    const encode = (tokens: string[]) => {
-                        let chars = "";
-                        for (let i = 0; i < tokens.length; i++) {
-                            const t = tokens[i];
-                            if (!(t in tokenHash)) {
-                                tokenArray.push(t);
-                                tokenHash[t] = tokenArray.length - 1;
-                            }
-                            chars += String.fromCharCode(tokenHash[t] + 0xE000); // Use private use area
-                        }
-                        return chars;
-                    };
-
-                    const chars1 = encode(tokens1);
-                    const chars2 = encode(tokens2);
-
-                    const diffs = dmp.diff_main(chars1, chars2, false);
-                    dmp.diff_cleanupSemantic(diffs);
-
-                    // Decode
-                    for (let i = 0; i < diffs.length; i++) {
-                        const chars = diffs[i][1];
-                        let text = "";
-                        for (let j = 0; j < chars.length; j++) {
-                            text += tokenArray[chars.charCodeAt(j) - 0xE000];
-                        }
-                        diffs[i][1] = text;
-                    }
-
-                    return diffs;
-                };
-
-                const diffs = diffWordMode(currentText, correctedText);
-
-                return diffs.map((part, index) => {
-                    const [op, text] = part;
-                    if (op === 1) {
-                        return <ins key={index} className="text-green-700 bg-green-50 font-bold px-1 rounded mx-0.5 no-underline">{text}</ins>;
-                    } else if (op === -1) {
-                        return <del key={index} className="text-red-500 bg-red-50 line-through px-1 rounded mx-0.5">{text}</del>;
-                    } else {
-                        return <span key={index}>{text}</span>;
-                    }
-                });
-              })()}
+              <div className="mb-4 bg-blue-50 border border-blue-200 p-2 rounded text-blue-800 text-xs">
+                <strong>Instrução:</strong> Analise as divergências abaixo. Escolha se deseja aplicar a sugestão baseada no documento fonte ("USAR PDF"), manter o texto original ("MANTER") ou editar manualmente ("EDITAR").
+              </div>
+              <div>
+                {interactiveDiffBlocks.map(block => (
+                  <InteractiveDiffWidget
+                    key={block.id}
+                    block={block}
+                    onResolve={handleResolveDiffBlock}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
-          {viewMode === 'corrected' && correctedText && (
+          {viewMode === 'corrected' && interactiveDiffBlocks && (
             <div className="flex-1 flex flex-col relative h-full overflow-hidden">
                <textarea
                  readOnly
-                 value={correctedText}
+                 value={computeFinalText()}
                  className="flex-1 w-full p-4 border border-green-300 bg-green-50 rounded-md font-mono text-sm resize-none"
                />
                <div className="mt-2 text-right shrink-0">
-                  <button onClick={() => { navigator.clipboard.writeText(correctedText); alert('Copiado!')}} className="text-sm text-blue-600 hover:underline">
+                  <button onClick={() => { navigator.clipboard.writeText(computeFinalText()); alert('Copiado!')}} className="text-sm text-blue-600 hover:underline">
                     Copiar Tudo
                   </button>
                </div>
