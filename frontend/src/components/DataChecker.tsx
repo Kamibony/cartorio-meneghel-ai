@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
+import { useCartorio } from '../hooks/useCartorio';
 import { ENV } from '../config/env';
 import { diff_match_patch } from 'diff-match-patch';
 
@@ -52,6 +53,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
+  const { cartorioId } = useCartorio();
 
   const hasUnresolvedConflicts = () => {
       if (!resolvedGroundTruth || !resolvedGroundTruth.entities) return false;
@@ -206,7 +208,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
           textToValidate = cachedDraftText.text;
         } else {
           // Extract text from the uploaded draft document
-          const extractedData = await uploadAndExtract(draftFile, 'DRAFT');
+          const extractedData = await uploadAndExtract(draftFile, 'DRAFT', cartorioId || 'default_cartorio');
           if (extractedData && extractedData.text) {
             textToValidate = extractedData.text;
             setCachedDraftText({fileName: draftFile.name, text: extractedData.text});
