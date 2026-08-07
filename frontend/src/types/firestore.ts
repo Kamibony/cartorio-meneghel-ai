@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type UserRole = 'admin' | 'escrevente';
+export type UserRole = 'cartorio_admin' | 'super_admin' | 'escrevente';
 
 export interface User {
   uid: string; // Firebase Auth UID

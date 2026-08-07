@@ -4,12 +4,12 @@ import { onAuthStateChanged } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
-import type { User as FirestoreUser } from '../types/firestore';
+import type { User as FirestoreUser, UserRole } from '../types/firestore';
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
   cartorioId: string | null;
-  userRole: string | null;
+  userRole: UserRole | null;
   isLoading: boolean;
 }
 
@@ -18,7 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [cartorioId, setCartorioId] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
