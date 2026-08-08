@@ -7,6 +7,7 @@ import { auth } from '../utils/firebase';
 
 interface DocumentViewerProps {
   onDataExtracted: (data: any) => void;
+  draftId?: string | null;
 }
 
 interface UploadedFile {
@@ -18,7 +19,7 @@ interface UploadedFile {
   id: string;
 }
 
-const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
+const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted, draftId }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const { uploadAndExtract } = useDocumentUpload();
@@ -89,7 +90,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
                     'Authorization': `Bearer ${token}`,
                     'X-Cartorio-ID': cartorioId || ''
                 },
-                body: JSON.stringify({ entities: allEntities }),
+                body: JSON.stringify({ entities: allEntities, document_id: draftId }),
             });
 
             if (!response.ok) {
@@ -99,6 +100,13 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ onDataExtracted }) => {
             const data = await response.json();
             if (data.entities) {
                 unifiedData.entities = data.entities;
+            }
+            unifiedData.document_id = data.document_id || draftId;
+
+            if (unifiedData.document_id && !draftId) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('docId', unifiedData.document_id);
+                window.history.pushState({}, '', url);
             }
             onDataExtracted(unifiedData);
         } catch (err: any) {

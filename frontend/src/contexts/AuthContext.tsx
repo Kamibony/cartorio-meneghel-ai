@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
 import type { User as FirestoreUser, UserRole } from '../types/firestore';
 
@@ -22,34 +22,58 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let snapshotUnsubscribe: (() => void) | undefined;
+
+    const authUnsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
 
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data() as FirestoreUser;
-            setCartorioId(data.cartorio_id);
-            setUserRole(data.role);
-          } else {
-            setCartorioId('default_cartorio'); // Fallback
-            setUserRole('escrevente');
-          }
+          // Set up real-time listener for the user document to act as an immediate kill switch
+          snapshotUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (userDoc) => {
+              if (userDoc.exists()) {
+                  const data = userDoc.data() as FirestoreUser;
+
+                  // Immediate kill switch if status is revoked
+                  if ((data as any).status === 'revoked') {
+                      console.warn("User access revoked. Signing out immediately.");
+                      signOut(auth);
+                      return;
+                  }
+
+                  setCartorioId(data.cartorio_id);
+                  setUserRole(data.role);
+              } else {
+                  setCartorioId('default_cartorio'); // Fallback
+                  setUserRole('escrevente');
+              }
+              setIsLoading(false);
+          }, (error) => {
+              console.error("User snapshot listener error:", error);
+              setIsLoading(false);
+          });
         } catch (e) {
-          console.error("Failed to load user context", e);
+          console.error("Failed to set up user context listener", e);
           setCartorioId('default_cartorio');
           setUserRole('escrevente');
+          setIsLoading(false);
         }
       } else {
+        if (snapshotUnsubscribe) {
+            snapshotUnsubscribe();
+        }
         setCartorioId(null);
         setUserRole(null);
+        setIsLoading(false);
       }
-
-      setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+        authUnsubscribe();
+        if (snapshotUnsubscribe) {
+            snapshotUnsubscribe();
+        }
+    };
   }, []);
 
   const value = {

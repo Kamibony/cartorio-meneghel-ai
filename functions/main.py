@@ -214,7 +214,59 @@ def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-from admin import inviteEmployee
+from admin import inviteEmployee, revokeEmployeeAccess
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def finalize_validation(req: https_fn.Request) -> https_fn.Response:
+    """Finalizes the validation process and marks the draft as completed."""
+    if req.method != "POST":
+        return https_fn.Response(json.dumps({"error": "Method not allowed"}), status=405)
+
+    try:
+        data = req.get_json()
+        if not data or not data.get("document_id") or not data.get("final_text"):
+            return https_fn.Response(json.dumps({"error": "Missing document_id or final_text"}), status=400)
+
+        document_id = data.get("document_id")
+        final_text = data.get("final_text")
+
+        auth_header = req.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return https_fn.Response(json.dumps({"error": "Unauthorized"}), status=401)
+
+        token = auth_header.split("Bearer ")[1]
+
+        cartorio_id = req.headers.get("X-Cartorio-ID")
+        if not cartorio_id:
+             return https_fn.Response(json.dumps({"error": "Missing X-Cartorio-ID header"}), status=400)
+
+        _init_firebase()
+        decoded_token = auth.verify_id_token(token)
+        uid = decoded_token.get("uid")
+
+        db = firestore.client()
+        minuta_ref = db.collection("minutas").document(document_id)
+        minuta_doc = minuta_ref.get()
+
+        if not minuta_doc.exists:
+             return https_fn.Response(json.dumps({"error": "Document not found"}), status=404)
+
+        minuta_data = minuta_doc.to_dict()
+        if minuta_data.get("cartorio_id") != cartorio_id:
+            return https_fn.Response(json.dumps({"error": "Forbidden"}), status=403)
+
+        minuta_ref.update({
+             "status": "completed",
+             "human_final_data": {"final_text": final_text},
+             "updatedAt": firestore.SERVER_TIMESTAMP,
+             "finalizedBy": uid
+        })
+
+        return https_fn.Response(json.dumps({"status": "success"}), status=200, content_type="application/json")
+    except Exception as e:
+        logger.error(f"Error in finalize_validation: {e}", exc_info=True)
+        return https_fn.Response(json.dumps({"error": str(e)}), status=500)
+
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def api_status(req: https_fn.Request) -> https_fn.Response:

@@ -3,7 +3,8 @@ import { useDocumentUpload } from '../hooks/useDocumentUpload';
 import { useCartorio } from '../hooks/useCartorio';
 import { ENV } from '../config/env';
 import { diff_match_patch } from 'diff-match-patch';
-import { auth } from '../utils/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../utils/firebase';
 import InteractiveDiffWidget from './InteractiveDiffWidget';
 import type { DiffBlock, ResolutionStatus } from './InteractiveDiffWidget';
 
@@ -29,9 +30,12 @@ interface ValidationResponse {
 
 interface DataCheckerProps {
   groundTruth: any;
+  draftId?: string | null;
+  initialDraftState?: any;
+  onValidationComplete?: () => void;
 }
 
-const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
+const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth, draftId, initialDraftState, onValidationComplete }) => {
   const [inputType, setInputType] = useState<'upload' | 'typing'>('upload');
   const [typedText, setTypedText] = useState<string>('');
   const [draftFile, setDraftFile] = useState<File | null>(null);
@@ -51,13 +55,62 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
   // Sync prop groundTruth to local state so we can mutate it upon resolution
   React.useEffect(() => {
-     setResolvedGroundTruth(groundTruth ? JSON.parse(JSON.stringify(groundTruth)) : null);
-     setHasAcknowledgedGroundTruth(false);
-  }, [groundTruth]);
+      if (initialDraftState) {
+          try {
+              if (initialDraftState.resolvedGroundTruth) setResolvedGroundTruth(initialDraftState.resolvedGroundTruth);
+              if (initialDraftState.hasAcknowledgedGroundTruth !== undefined) setHasAcknowledgedGroundTruth(initialDraftState.hasAcknowledgedGroundTruth);
+              if (initialDraftState.resolvedErrors) setResolvedErrors(new Set(initialDraftState.resolvedErrors));
+              if (initialDraftState.typedText) setTypedText(initialDraftState.typedText);
+              if (initialDraftState.validationErrors) setValidationErrors(initialDraftState.validationErrors);
+              if (initialDraftState.interactiveDiffBlocks) setInteractiveDiffBlocks(initialDraftState.interactiveDiffBlocks);
+              if (initialDraftState.correctedText) setCorrectedText(initialDraftState.correctedText);
+              if (initialDraftState.viewMode) setViewMode(initialDraftState.viewMode);
+              return;
+          } catch (e) {
+              console.error("Failed to hydrate initialDraftState", e);
+          }
+      }
+      setResolvedGroundTruth(groundTruth ? JSON.parse(JSON.stringify(groundTruth)) : null);
+      setHasAcknowledgedGroundTruth(false);
+  }, [groundTruth, initialDraftState]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
   const { cartorioId } = useCartorio();
+
+  // Persist state to Firestore using debouncing
+  const saveTimeoutRef = useRef<number | null>(null);
+
+  React.useEffect(() => {
+      const documentId = draftId || groundTruth?.document_id;
+      if (documentId && resolvedGroundTruth && cartorioId) {
+          if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+          saveTimeoutRef.current = setTimeout(async () => {
+              const cacheObj = {
+                  resolvedGroundTruth,
+                  hasAcknowledgedGroundTruth,
+                  resolvedErrors: Array.from(resolvedErrors),
+                  typedText,
+                  validationErrors,
+                  interactiveDiffBlocks,
+                  correctedText,
+                  viewMode
+              };
+
+              try {
+                  const minutaRef = doc(db, 'minutas', documentId);
+                  await updateDoc(minutaRef, { draft_state: cacheObj });
+              } catch (e) {
+                  console.error("Failed to save draft state to Firestore", e);
+              }
+          }, 2000); // Debounce 2 seconds
+      }
+
+      return () => {
+          if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+      }
+  }, [resolvedGroundTruth, hasAcknowledgedGroundTruth, resolvedErrors, typedText, validationErrors, interactiveDiffBlocks, correctedText, viewMode, draftId, groundTruth?.document_id, cartorioId]);
 
   const hasUnresolvedConflicts = () => {
       if (!resolvedGroundTruth || !resolvedGroundTruth.entities) return false;
@@ -74,6 +127,9 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
 
   const resolveDuplicate = async (entityIndex: number) => {
       if (!resolvedGroundTruth) return;
+
+      const fieldId = `duplicate_${entityIndex}`;
+      setResolvingFields(prev => new Set(prev).add(fieldId));
 
       const newGt = { ...resolvedGroundTruth };
       const entity = newGt.entities[entityIndex];
@@ -108,11 +164,20 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       } catch (err: any) {
           console.error("Error logging duplicate resolution:", err);
           alert(`Erro ao resolver duplicata: ${err.message}. Por favor, tente novamente.`);
+      } finally {
+          setResolvingFields(prev => {
+              const next = new Set(prev);
+              next.delete(fieldId);
+              return next;
+          });
       }
   };
 
   const resolveConflict = async (entityIndex: number, field: string, value: string) => {
       if (!resolvedGroundTruth) return;
+
+      const fieldId = `conflict_${entityIndex}_${field}`;
+      setResolvingFields(prev => new Set(prev).add(fieldId));
 
       const newGt = { ...resolvedGroundTruth };
       const entity = newGt.entities[entityIndex];
@@ -140,7 +205,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
               throw new Error(`API error: ${response.status}`);
           }
 
-          // Only apply the optimistic update if the fetch succeeded
+          // Strict pessimistic update
           entity[field] = value;
 
           if (!entity._resolved_conflicts) {
@@ -154,6 +219,12 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
       } catch(err) {
           console.error("Failed to log pre-validation HitL:", err);
           alert("Falha ao registrar a resolução de conflito. Por favor, tente novamente.");
+      } finally {
+          setResolvingFields(prev => {
+              const next = new Set(prev);
+              next.delete(fieldId);
+              return next;
+          });
       }
   };
 
@@ -448,6 +519,54 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
     }
   };
 
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const handleFinalizeValidation = async () => {
+      setIsFinalizing(true);
+      setServerError(null);
+
+      const documentId = draftId || groundTruth?.document_id;
+      if (!documentId) {
+          setServerError("ID do documento não encontrado. Por favor, tente enviar novamente.");
+          setIsFinalizing(false);
+          return;
+      }
+
+      try {
+          const apiUrl = ENV.apiUrl;
+          const endpoint = `${apiUrl}/finalize_validation`;
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+
+          const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`,
+                  'X-Cartorio-ID': cartorioId || ''
+              },
+              body: JSON.stringify({
+                  document_id: documentId,
+                  final_text: computeFinalText(),
+              })
+          });
+
+          if (!response.ok) {
+              const data = await response.json();
+              throw new Error(data.error || 'Falha ao finalizar validação.');
+          }
+
+          alert("Validação concluída com sucesso! Minuta pronta para o Módulo 2.");
+          if (onValidationComplete) {
+              onValidationComplete();
+          }
+
+      } catch (err: any) {
+          console.error("Failed to finalize:", err);
+          setServerError(`Erro ao finalizar: ${err.message}`);
+      } finally {
+          setIsFinalizing(false);
+      }
+  };
+
   return (
     <div className="h-full bg-white border border-gray-300 rounded-lg shadow-sm flex flex-col overflow-hidden">
       <div className="bg-gray-100 border-b border-gray-200 px-4 py-3 flex justify-between items-center">
@@ -494,10 +613,17 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                                                     <button
                                                         key={oIdx}
                                                         onClick={() => resolveConflict(eIdx, field, opt.value)}
-                                                        className="text-left px-3 py-2 border border-orange-300 rounded hover:bg-orange-100 transition-colors"
+                                                        disabled={resolvingFields.has(`conflict_${eIdx}_${field}`)}
+                                                        className={`text-left px-3 py-2 border border-orange-300 rounded transition-colors ${resolvingFields.has(`conflict_${eIdx}_${field}`) ? 'bg-orange-200 cursor-not-allowed' : 'hover:bg-orange-100'}`}
                                                     >
-                                                        <span className="font-medium">{opt.value}</span>
-                                                        <span className="text-xs text-orange-600 ml-2">(Fonte: {opt.source})</span>
+                                                        {resolvingFields.has(`conflict_${eIdx}_${field}`) ? (
+                                                            <span className="text-orange-700 font-medium">Resolvendo...</span>
+                                                        ) : (
+                                                            <>
+                                                                <span className="font-medium">{opt.value}</span>
+                                                                <span className="text-xs text-orange-600 ml-2">(Fonte: {opt.source})</span>
+                                                            </>
+                                                        )}
                                                     </button>
                                                 ))}
                                             </div>
@@ -522,9 +648,10 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                                             </div>
                                             <button
                                                 onClick={() => resolveDuplicate(eIdx)}
-                                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                                                disabled={resolvingFields.has(`duplicate_${eIdx}`)}
+                                                className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${resolvingFields.has(`duplicate_${eIdx}`) ? 'bg-yellow-400 cursor-not-allowed' : 'bg-yellow-600 hover:bg-yellow-700'} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500`}
                                             >
-                                                Confirmar como Entidades Separadas
+                                                {resolvingFields.has(`duplicate_${eIdx}`) ? 'Confirmando...' : 'Confirmar como Entidades Separadas'}
                                             </button>
                                         </div>
                                     );
@@ -687,6 +814,16 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth }) => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                   {isFormatting ? 'Formatando...' : 'Aplicar Correções Seguras'}
+                </button>
+             )}
+
+             {viewMode === 'corrected' && (
+                <button
+                  onClick={handleFinalizeValidation}
+                  disabled={isFinalizing}
+                  className={`inline-flex items-center px-4 py-2 text-sm font-bold rounded shadow-sm text-white bg-blue-600 hover:bg-blue-700 ${isFinalizing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isFinalizing ? 'Finalizando...' : 'Finalizar Validação'}
                 </button>
              )}
           </div>

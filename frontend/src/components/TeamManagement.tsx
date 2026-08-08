@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { User, UserRole } from '../types/firestore';
 
 const TeamManagement: React.FC = () => {
-  const { cartorioId } = useAuth();
+  const { cartorioId, userRole } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -35,6 +35,33 @@ const TeamManagement: React.FC = () => {
   useEffect(() => {
     loadUsers();
   }, [cartorioId]);
+
+  const handleRevoke = async (uid: string) => {
+    if (!window.confirm("Tem certeza que deseja revogar o acesso deste usuário?")) return;
+
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/revokeEmployeeAccess`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ uid })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Erro ao revogar acesso');
+      }
+
+      setMessage({ text: 'Acesso revogado com sucesso.', type: 'success' });
+      loadUsers();
+    } catch (error: any) {
+      setMessage({ text: error.message, type: 'error' });
+    }
+  };
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +98,20 @@ const TeamManagement: React.FC = () => {
       setIsInviting(false);
     }
   };
+
+  if (userRole !== 'cartorio_admin') {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-red-200">
+          <svg className="mx-auto h-12 w-12 text-red-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Acesso Negado</h2>
+          <p className="text-gray-600">Você não tem permissão para acessar a Gestão de Equipe.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-lg shadow p-6 max-w-4xl mx-auto">
@@ -130,6 +171,7 @@ const TeamManagement: React.FC = () => {
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Papel</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -142,13 +184,27 @@ const TeamManagement: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {(user as any).status === 'active' ? 'Ativo' : 'Revogado'}
+                      {(user as any).status === 'active' ? (
+                          <span className="text-green-600 font-medium">Ativo</span>
+                      ) : (
+                          <span className="text-red-500">Revogado</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        {(user as any).status === 'active' && user.role !== 'cartorio_admin' && (
+                            <button
+                                onClick={() => handleRevoke(user.uid)}
+                                className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"
+                            >
+                                Revogar
+                            </button>
+                        )}
                     </td>
                   </tr>
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-6 py-4 text-center text-sm text-gray-500">
+                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
                       Nenhum membro encontrado.
                     </td>
                   </tr>
