@@ -35,7 +35,25 @@ function Dashboard() {
                         document_id: id
                     });
                 }
-                if (data.draft_state) {
+                // Load from localStorage if present (indicating an unsynced draft from this device),
+                // otherwise fallback to Firestore. Since we now clear localStorage on successful sync,
+                // any data here represents an interrupted session.
+                const localStateRaw = localStorage.getItem(`draft_state_${id}`);
+                if (localStateRaw) {
+                    try {
+                        const parsedLocal = JSON.parse(localStateRaw);
+                        // Optional: we could compare a timestamp, but since we clear on success,
+                        // if this exists, it's unsaved local progress.
+                        setInitialDraftState(parsedLocal);
+                        // Clean it up so we don't accidentally reload it if we refresh after syncing
+                        localStorage.removeItem(`draft_state_${id}`);
+                    } catch (e) {
+                        console.error("Failed to parse local draft state", e);
+                        if (data.draft_state) {
+                            setInitialDraftState(data.draft_state);
+                        }
+                    }
+                } else if (data.draft_state) {
                     setInitialDraftState(data.draft_state);
                 }
             } else {

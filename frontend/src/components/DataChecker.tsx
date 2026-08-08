@@ -84,9 +84,45 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth, draftId, initial
   React.useEffect(() => {
       const documentId = draftId || groundTruth?.document_id;
       if (documentId && resolvedGroundTruth && cartorioId) {
+          const cacheObj = {
+              resolvedGroundTruth,
+              hasAcknowledgedGroundTruth,
+              resolvedErrors: Array.from(resolvedErrors),
+              typedText,
+              validationErrors,
+              interactiveDiffBlocks,
+              correctedText,
+              viewMode
+          };
+
+          // Synchronously save to localStorage for instant backup
+          localStorage.setItem(`draft_state_${documentId}`, JSON.stringify(cacheObj));
+
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
           saveTimeoutRef.current = setTimeout(async () => {
+              try {
+                  const minutaRef = doc(db, 'minutas', documentId);
+                  await updateDoc(minutaRef, { draft_state: cacheObj });
+                  // Clear local storage upon successful sync to prevent stale data conflicts
+                  // on future visits or across multiple devices.
+                  localStorage.removeItem(`draft_state_${documentId}`);
+              } catch (e) {
+                  console.error("Failed to save draft state to Firestore", e);
+              }
+          }, 30000); // Debounce 30 seconds to reduce Firestore writes
+      }
+
+      return () => {
+          if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+      }
+  }, [resolvedGroundTruth, hasAcknowledgedGroundTruth, resolvedErrors, typedText, validationErrors, interactiveDiffBlocks, correctedText, viewMode, draftId, groundTruth?.document_id, cartorioId]);
+
+  // Flush to Firestore on page unload
+  React.useEffect(() => {
+      const handleBeforeUnload = () => {
+          const documentId = draftId || groundTruth?.document_id;
+          if (documentId && resolvedGroundTruth) {
               const cacheObj = {
                   resolvedGroundTruth,
                   hasAcknowledgedGroundTruth,
@@ -98,19 +134,25 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth, draftId, initial
                   viewMode
               };
 
-              try {
-                  const minutaRef = doc(db, 'minutas', documentId);
-                  await updateDoc(minutaRef, { draft_state: cacheObj });
-              } catch (e) {
-                  console.error("Failed to save draft state to Firestore", e);
-              }
-          }, 2000); // Debounce 2 seconds
-      }
+              // We use localStorage as the primary rapid backup.
+              // Sending an async fetch in beforeunload is unreliable,
+              // but we can try to leave the latest state in local storage
+              // so it can be picked up later if the user returns.
+              // If we truly needed guaranteed remote save on close,
+              // we would use `navigator.sendBeacon`.
+              localStorage.setItem(`draft_state_${documentId}`, JSON.stringify(cacheObj));
 
+              // If we want to attempt an emergency updateDoc, we can, but it's async.
+              // A safer approach is just to rely on localStorage for the gap
+              // between the last 30s sync and the unload.
+          }
+      };
+
+      window.addEventListener('beforeunload', handleBeforeUnload);
       return () => {
-          if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
-      }
-  }, [resolvedGroundTruth, hasAcknowledgedGroundTruth, resolvedErrors, typedText, validationErrors, interactiveDiffBlocks, correctedText, viewMode, draftId, groundTruth?.document_id, cartorioId]);
+          window.removeEventListener('beforeunload', handleBeforeUnload);
+      };
+  }, [resolvedGroundTruth, hasAcknowledgedGroundTruth, resolvedErrors, typedText, validationErrors, interactiveDiffBlocks, correctedText, viewMode, draftId, groundTruth?.document_id]);
 
   const hasUnresolvedConflicts = () => {
       if (!resolvedGroundTruth || !resolvedGroundTruth.entities) return false;
