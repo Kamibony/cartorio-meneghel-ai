@@ -63,6 +63,12 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             email_verified=False
         )
 
+        # Set Custom Claims
+        auth.set_custom_user_claims(new_user.uid, {
+            "cartorio_id": caller_cartorio,
+            "role": role
+        })
+
         # Send password reset link
         link = auth.generate_password_reset_link(email)
         # In a real app we'd email this link using SendGrid or similar.

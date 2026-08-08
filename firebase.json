@@ -44,6 +44,18 @@
         "function": "merge_entities"
       },
       {
+        "source": "/api/inviteEmployee",
+        "function": "inviteEmployee"
+      },
+      {
+        "source": "/api/revokeEmployeeAccess",
+        "function": "revokeEmployeeAccess"
+      },
+      {
+        "source": "/api/finalize_validation",
+        "function": "finalize_validation"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

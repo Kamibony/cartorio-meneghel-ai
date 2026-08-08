@@ -3,6 +3,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, UserRole } from '../types/firestore';
+import { ENV } from '../config/env';
 
 const TeamManagement: React.FC = () => {
   const { cartorioId, userRole } = useAuth();
@@ -41,7 +42,7 @@ const TeamManagement: React.FC = () => {
 
     try {
       const token = await auth.currentUser?.getIdToken();
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const apiUrl = ENV.apiUrl;
       const response = await fetch(`${apiUrl}/revokeEmployeeAccess`, {
         method: 'POST',
         headers: {
@@ -72,7 +73,7 @@ const TeamManagement: React.FC = () => {
     try {
       const token = await auth.currentUser?.getIdToken();
 
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const apiUrl = ENV.apiUrl;
 
       const response = await fetch(`${apiUrl}/inviteEmployee`, {
         method: 'POST',

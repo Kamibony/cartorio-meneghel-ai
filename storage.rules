@@ -6,16 +6,12 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function getUserData() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
-    }
-
     function hasRole(role) {
-      return isAuthenticated() && getUserData().role == role;
+      return isAuthenticated() && request.auth.token.role == role;
     }
 
     function belongsToCartorio(cartorioId) {
-      return isAuthenticated() && getUserData().cartorio_id == cartorioId;
+      return isAuthenticated() && request.auth.token.cartorio_id == cartorioId;
     }
 
     match /cartorios/{cartorioId} {
@@ -34,7 +30,7 @@ service firebase.storage {
       match /scans/{documentId} {
         // Hotfix: Allow any authenticated user to upload scans to unblock E2E testing
         // TODO: Revert to belongsToCartorio(cartorioId) after implementing Custom Claims
-        allow read, write: if isAuthenticated();
+        allow read, write: if belongsToCartorio(cartorioId);
       }
     }
   }
