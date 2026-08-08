@@ -30,6 +30,11 @@ service firebase.storage {
         // Any user in the cartorio can read/write generated documents
         allow read, write: if belongsToCartorio(cartorioId);
       }
+
+      match /scans/{documentId} {
+        // Any user in the cartorio can read/write scan documents
+        allow read, write: if belongsToCartorio(cartorioId);
+      }
     }
   }
 }
