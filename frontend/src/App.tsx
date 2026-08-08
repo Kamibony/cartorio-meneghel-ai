@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './utils/firebase';
 import './index.css';
 import DocumentViewer from './components/DocumentViewer';
 import DataChecker from './components/DataChecker';
@@ -8,10 +10,53 @@ import TeamManagement from './components/TeamManagement';
 
 function Dashboard() {
   const [groundTruth, setGroundTruth] = useState<any>(null);
+  const [initialDraftState, setInitialDraftState] = useState<any>(null);
   const [currentView, setCurrentView] = useState<'dashboard' | 'team_management'>('dashboard');
   const { currentUser, userRole, isLoading } = useAuth();
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [isHydrating, setIsHydrating] = useState(false);
 
-  if (isLoading) {
+  // Parse docId from URL and hydrate state
+  useEffect(() => {
+    const hydrateState = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('docId');
+      if (id && userRole) {
+        setIsHydrating(true);
+        try {
+          const minutaDoc = await getDoc(doc(db, 'minutas', id));
+          if (minutaDoc.exists()) {
+            const data = minutaDoc.data();
+            if (data.status === 'hitl_required' || data.status === 'processing') {
+                setDraftId(id);
+                if (data.ai_extracted_data) {
+                    setGroundTruth({
+                        ...data.ai_extracted_data,
+                        document_id: id
+                    });
+                }
+                if (data.draft_state) {
+                    setInitialDraftState(data.draft_state);
+                }
+            } else {
+                // If not in a valid state, clear the URL
+                window.history.pushState({}, '', window.location.pathname);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to hydrate state:", error);
+        } finally {
+          setIsHydrating(false);
+        }
+      }
+    };
+
+    if (currentUser) {
+        hydrateState();
+    }
+  }, [currentUser, userRole]);
+
+  if (isLoading || isHydrating) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-gray-500 text-lg">Carregando...</div>
@@ -63,11 +108,16 @@ function Dashboard() {
         {currentView === 'dashboard' ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
             <section className="h-full overflow-hidden">
-              <DocumentViewer onDataExtracted={setGroundTruth} />
+              <DocumentViewer onDataExtracted={setGroundTruth} draftId={draftId} />
             </section>
 
             <section className="h-full overflow-hidden">
-              <DataChecker groundTruth={groundTruth} />
+              <DataChecker groundTruth={groundTruth} draftId={draftId} initialDraftState={initialDraftState} onValidationComplete={() => {
+                 setGroundTruth(null);
+                 setDraftId(null);
+                 setInitialDraftState(null);
+                 window.history.pushState({}, '', window.location.pathname);
+              }} />
             </section>
           </div>
         ) : (

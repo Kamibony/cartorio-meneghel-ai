@@ -88,3 +88,79 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
     except Exception as e:
         logger.error(f"Error in inviteEmployee: {e}", exc_info=True)
         return https_fn.Response(json.dumps({"error": str(e)}), status=500)
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
+    """
+    Revokes access for an Escrevente by a Cartorio Admin.
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(
+            json.dumps({"error": "Unauthorized"}),
+            status=401,
+            content_type="application/json"
+        )
+
+    token = auth_header.split("Bearer ")[1]
+    _init_firebase()
+
+    try:
+        decoded_token = auth.verify_id_token(token)
+        caller_uid = decoded_token.get("uid")
+
+        db = firestore.client()
+        caller_doc = db.collection("users").document(caller_uid).get()
+        if not caller_doc.exists:
+            return https_fn.Response(json.dumps({"error": "Caller user not found in database"}), status=403)
+
+        caller_data = caller_doc.to_dict()
+        caller_role = caller_data.get("role")
+        caller_cartorio = caller_data.get("cartorio_id")
+
+        if caller_role not in ["super_admin", "cartorio_admin"]:
+            return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)
+
+        data = req.get_json()
+        target_uid = data.get("uid")
+
+        if not target_uid:
+            return https_fn.Response(json.dumps({"error": "Missing uid in payload"}), status=400)
+
+        # Verify target user belongs to same cartorio
+        target_doc = db.collection("users").document(target_uid).get()
+        if not target_doc.exists:
+            return https_fn.Response(json.dumps({"error": "Target user not found"}), status=404)
+
+        target_data = target_doc.to_dict()
+        if target_data.get("cartorio_id") != caller_cartorio and caller_role != "super_admin":
+            return https_fn.Response(json.dumps({"error": "Forbidden: Cannot revoke access for user in different cartorio"}), status=403)
+
+        if target_data.get("role") == "cartorio_admin" and caller_role != "super_admin":
+             return https_fn.Response(json.dumps({"error": "Forbidden: Cannot revoke another admin"}), status=403)
+
+        # Revoke access in Firebase Auth
+        auth.update_user(target_uid, disabled=True)
+
+        # Update status in Firestore
+        db.collection("users").document(target_uid).update({
+            "status": "revoked",
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        })
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "message": "Access revoked successfully"}),
+            status=200,
+            content_type="application/json"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in revokeEmployeeAccess: {e}", exc_info=True)
+        return https_fn.Response(json.dumps({"error": str(e)}), status=500)
