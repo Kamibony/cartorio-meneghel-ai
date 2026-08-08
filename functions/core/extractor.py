@@ -7,6 +7,8 @@ import threading
 from typing import Dict, Any
 from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
 
+from core.config import GEMINI_MODEL
+
 logger = logging.getLogger(__name__)
 
 _semaphore = threading.Semaphore(3)
@@ -122,7 +124,7 @@ class DocumentExtractor:
         def _generate():
             with _semaphore:
                 return client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=GEMINI_MODEL,
                     contents=[file_part, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -252,7 +254,7 @@ class DocumentExtractor:
         def _generate():
             with _semaphore:
                 return client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=GEMINI_MODEL,
                     contents=[prompt, text],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",

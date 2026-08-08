@@ -6,6 +6,8 @@ from docxtpl import DocxTemplate
 from google import genai
 from google.genai import types
 
+from core.config import GEMINI_MODEL
+
 logger = logging.getLogger(__name__)
 
 def generate_document_from_template(template_bytes: bytes, verified_data: dict, required_tags: list) -> bytes:
@@ -47,7 +49,7 @@ You must return a JSON object exactly matching the requested schema.
 </VERIFIED_JSON_DATA>
 """
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
