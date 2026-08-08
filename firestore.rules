@@ -12,12 +12,16 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isActiveUser() {
+      return getUserData().status != 'revoked';
+    }
+
     function hasRole(role) {
-      return isAuthenticated() && getUserData().role == role;
+      return isAuthenticated() && isActiveUser() && getUserData().role == role;
     }
 
     function belongsToCartorio(cartorioId) {
-      return isAuthenticated() && getUserData().cartorio_id == cartorioId;
+      return isAuthenticated() && isActiveUser() && getUserData().cartorio_id == cartorioId;
     }
 
     function isOwner(userId) {
