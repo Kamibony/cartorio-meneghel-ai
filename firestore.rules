@@ -17,11 +17,11 @@ service cloud.firestore {
     }
 
     function hasRole(role) {
-      return isAuthenticated() && isActiveUser() && request.auth.token.role == role;
+      return isAuthenticated() && isActiveUser() && ('role' in request.auth.token) && request.auth.token.role == role;
     }
 
     function belongsToCartorio(cartorioId) {
-      return isAuthenticated() && isActiveUser() && request.auth.token.cartorio_id == cartorioId;
+      return isAuthenticated() && isActiveUser() && ('cartorio_id' in request.auth.token) && request.auth.token.cartorio_id == cartorioId;
     }
 
     function isOwner(userId) {
@@ -42,16 +42,16 @@ service cloud.firestore {
       // Minutas Collection
       match /minutas/{minutaId} {
         // Any user belonging to the cartorio can read/write minutas
-        allow read, write: if belongsToCartorio(cartorioId) || hasRole('super_admin');
+        allow read, write: if hasRole('super_admin') || belongsToCartorio(cartorioId);
       }
 
       // Audit Logs Collection
       match /audit_logs/{logId} {
         // Any user belonging to the cartorio can append to audit logs
-        allow create: if belongsToCartorio(cartorioId) || hasRole('super_admin');
+        allow create: if hasRole('super_admin') || belongsToCartorio(cartorioId);
 
         // Only admins belonging to the cartorio can read audit logs
-        allow read: if (belongsToCartorio(cartorioId) && hasRole('cartorio_admin')) || hasRole('super_admin');
+        allow read: if hasRole('super_admin') || (belongsToCartorio(cartorioId) && hasRole('cartorio_admin'));
 
         // Audit logs are immutable (no update or delete)
         allow update, delete: if false;

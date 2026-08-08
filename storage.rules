@@ -7,30 +7,30 @@ service firebase.storage {
     }
 
     function hasRole(role) {
-      return isAuthenticated() && request.auth.token.role == role;
+      return isAuthenticated() && ('role' in request.auth.token) && request.auth.token.role == role;
     }
 
     function belongsToCartorio(cartorioId) {
-      return isAuthenticated() && request.auth.token.cartorio_id == cartorioId;
+      return isAuthenticated() && ('cartorio_id' in request.auth.token) && request.auth.token.cartorio_id == cartorioId;
     }
 
     match /cartorios/{cartorioId} {
       match /templates/{templateId} {
         // Any user in the cartorio can read templates for generation
-        allow read: if belongsToCartorio(cartorioId) || hasRole('super_admin');
+        allow read: if hasRole('super_admin') || belongsToCartorio(cartorioId);
         // Only admins can upload/modify templates
-        allow write: if (belongsToCartorio(cartorioId) && hasRole('cartorio_admin')) || hasRole('super_admin');
+        allow write: if hasRole('super_admin') || (belongsToCartorio(cartorioId) && hasRole('cartorio_admin'));
       }
 
       match /generated/{documentId} {
         // Any user in the cartorio can read/write generated documents
-        allow read, write: if belongsToCartorio(cartorioId) || hasRole('super_admin');
+        allow read, write: if hasRole('super_admin') || belongsToCartorio(cartorioId);
       }
 
       match /scans/{documentId} {
         // Hotfix: Allow any authenticated user to upload scans to unblock E2E testing
         // TODO: Revert to belongsToCartorio(cartorioId) after implementing Custom Claims
-        allow read, write: if belongsToCartorio(cartorioId) || hasRole('super_admin');
+        allow read, write: if hasRole('super_admin') || belongsToCartorio(cartorioId);
       }
     }
   }
