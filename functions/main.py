@@ -6,7 +6,7 @@ from firebase_functions import https_fn, options
 
 logger = logging.getLogger(__name__)
 
-from core.config import global_cors
+from core.config import global_cors, GEMINI_MODEL
 
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
@@ -348,7 +348,7 @@ CRITICAL: If the Ground Truth JSON contains fields (like RG or naturalidade) tha
 Return the updated final text ONLY, without any markdown formatting or explanations.
 """
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0
