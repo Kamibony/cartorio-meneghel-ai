@@ -72,11 +72,12 @@ jobs:
         env:
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
+          STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
         run: |
           echo "$SA_KEY" > /tmp/firebase-key.json
           gcloud auth activate-service-account --key-file=/tmp/firebase-key.json
           gcloud services enable aiplatform.googleapis.com --project "$FIREBASE_PROJECT_ID"
-          gsutil cors set cors.json gs://$FIREBASE_PROJECT_ID.firebasestorage.app
+          gsutil cors set cors.json gs://${STORAGE_BUCKET:-$FIREBASE_PROJECT_ID.firebasestorage.app}
 
       - name: Deploy to Firebase Functions
         env:

@@ -25,7 +25,7 @@ export function useDocumentUpload() {
       }
 
       // 1. Upload to Firebase Storage
-      const storageRef = ref(storage, `scans/${Date.now()}_${file.name}`);
+      const storageRef = ref(storage, `cartorios/${cartorioId}/scans/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
 
       // Calculate gs:// URI
