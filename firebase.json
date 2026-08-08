@@ -63,6 +63,9 @@
       "runtime": "python311"
     }
   ],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "storage": {
     "rules": "storage.rules"
   }
