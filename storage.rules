@@ -17,20 +17,20 @@ service firebase.storage {
     match /cartorios/{cartorioId} {
       match /templates/{templateId} {
         // Any user in the cartorio can read templates for generation
-        allow read: if belongsToCartorio(cartorioId);
+        allow read: if belongsToCartorio(cartorioId) || hasRole('super_admin');
         // Only admins can upload/modify templates
-        allow write: if belongsToCartorio(cartorioId) && (hasRole('cartorio_admin') || hasRole('super_admin'));
+        allow write: if (belongsToCartorio(cartorioId) && hasRole('cartorio_admin')) || hasRole('super_admin');
       }
 
       match /generated/{documentId} {
         // Any user in the cartorio can read/write generated documents
-        allow read, write: if belongsToCartorio(cartorioId);
+        allow read, write: if belongsToCartorio(cartorioId) || hasRole('super_admin');
       }
 
       match /scans/{documentId} {
         // Hotfix: Allow any authenticated user to upload scans to unblock E2E testing
         // TODO: Revert to belongsToCartorio(cartorioId) after implementing Custom Claims
-        allow read, write: if belongsToCartorio(cartorioId);
+        allow read, write: if belongsToCartorio(cartorioId) || hasRole('super_admin');
       }
     }
   }

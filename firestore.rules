@@ -42,16 +42,16 @@ service cloud.firestore {
       // Minutas Collection
       match /minutas/{minutaId} {
         // Any user belonging to the cartorio can read/write minutas
-        allow read, write: if belongsToCartorio(cartorioId);
+        allow read, write: if belongsToCartorio(cartorioId) || hasRole('super_admin');
       }
 
       // Audit Logs Collection
       match /audit_logs/{logId} {
         // Any user belonging to the cartorio can append to audit logs
-        allow create: if belongsToCartorio(cartorioId);
+        allow create: if belongsToCartorio(cartorioId) || hasRole('super_admin');
 
         // Only admins belonging to the cartorio can read audit logs
-        allow read: if belongsToCartorio(cartorioId) && (hasRole('cartorio_admin') || hasRole('super_admin'));
+        allow read: if (belongsToCartorio(cartorioId) && hasRole('cartorio_admin')) || hasRole('super_admin');
 
         // Audit logs are immutable (no update or delete)
         allow update, delete: if false;
