@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    function belongsToCartorio(cartorioId) {
+      return isAuthenticated() && getUserData().cartorio_id == cartorioId;
+    }
+
+    match /cartorios/{cartorioId} {
+      match /templates/{templateId} {
+        // Any user in the cartorio can read templates for generation
+        allow read: if belongsToCartorio(cartorioId);
+        // Only admins can upload/modify templates
+        allow write: if belongsToCartorio(cartorioId) && (hasRole('cartorio_admin') || hasRole('super_admin'));
+      }
+
+      match /generated/{documentId} {
+        // Any user in the cartorio can read/write generated documents
+        allow read, write: if belongsToCartorio(cartorioId);
+      }
+    }
+  }
+}
