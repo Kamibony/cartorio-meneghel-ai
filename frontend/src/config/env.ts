@@ -8,7 +8,7 @@ export const ENV = {
     return import.meta.env.PROD;
   },
   get apiUrl() {
-    const configuredUrl = import.meta.env.VITE_API_URL || '';
+    const configuredUrl = import.meta.env.VITE_API_URL || '/api';
 
     // Strict isolation: if we are in production and a localhost URL is provided, fail fast.
     if (this.isProd && (configuredUrl.includes('127.0.0.1') || configuredUrl.includes('localhost'))) {

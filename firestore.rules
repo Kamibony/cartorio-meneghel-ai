@@ -17,11 +17,11 @@ service cloud.firestore {
     }
 
     function hasRole(role) {
-      return isAuthenticated() && isActiveUser() && getUserData().role == role;
+      return isAuthenticated() && isActiveUser() && request.auth.token.role == role;
     }
 
     function belongsToCartorio(cartorioId) {
-      return isAuthenticated() && isActiveUser() && getUserData().cartorio_id == cartorioId;
+      return isAuthenticated() && isActiveUser() && request.auth.token.cartorio_id == cartorioId;
     }
 
     function isOwner(userId) {
