@@ -565,3 +565,151 @@ def log_hitl_resolution(req: https_fn.Request) -> https_fn.Response:
             status=500,
             content_type="application/json"
         )
+
+@https_fn.on_call(memory=options.MemoryOption.MB_256)
+def register_template(req: https_fn.CallableRequest) -> dict:
+    """
+    Registers a new .docx template.
+    Accepts Callable payload: {"cartorio_id": "...", "gcs_path": "...", "name": "...", "document_type": "...", "created_by": "..."}
+    Downloads the template from GCS, extracts Jinja2 tags, and creates a record in Firestore.
+    """
+    if not req.auth:
+        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.UNAUTHENTICATED, message="Unauthenticated")
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import firestore, storage
+        db = firestore.client()
+
+        user_doc = db.collection('users').document(req.auth.uid).get()
+        if not user_doc.exists:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="User not found")
+
+        user_data = user_doc.to_dict()
+        data = req.data
+        cartorio_id = data.get("cartorio_id")
+
+        if not cartorio_id or user_data.get('cartorio_id') != cartorio_id or user_data.get('role') not in ['cartorio_admin', 'super_admin']:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
+        if not data:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
+
+        cartorio_id = data.get("cartorio_id")
+        gcs_path = data.get("gcs_path")
+        name = data.get("name")
+        document_type = data.get("document_type")
+        created_by = data.get("created_by")
+
+        if not all([cartorio_id, gcs_path, name, document_type, created_by]):
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
+
+        bucket = storage.bucket()
+
+        blob = bucket.blob(gcs_path)
+        if not blob.exists():
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message=f"File not found at {gcs_path}")
+
+        template_bytes = blob.download_as_bytes()
+
+        from core.generator import extract_tags_from_template
+        required_tags = extract_tags_from_template(template_bytes)
+
+        doc_ref = db.collection("cartorios").document(cartorio_id).collection("templates").document()
+
+        template_data = {
+            "id": doc_ref.id,
+            "cartorio_id": cartorio_id,
+            "name": name,
+            "document_type": document_type,
+            "gcs_path": gcs_path,
+            "required_tags": required_tags,
+            "created_by": created_by,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "is_active": True
+        }
+
+        doc_ref.set(template_data)
+
+        template_data["created_at"] = "SERVER_TIMESTAMP"
+
+        return {"status": "success", "template": template_data}
+
+    except https_fn.HttpsError as he:
+        raise he
+    except Exception as e:
+        logger.error("Error in register_template", exc_info=True)
+        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
+
+@https_fn.on_call(memory=options.MemoryOption.MB_512, timeout_sec=540)
+def generate_document(req: https_fn.CallableRequest) -> dict:
+    """
+    Generates a document from a registered template.
+    Accepts Callable payload: {"cartorio_id": "...", "template_id": "...", "verified_data": {...}}
+    """
+    if not req.auth:
+        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.UNAUTHENTICATED, message="Unauthenticated")
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import firestore, storage
+        db = firestore.client()
+
+        user_doc = db.collection('users').document(req.auth.uid).get()
+        if not user_doc.exists:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="User not found")
+
+        user_data = user_doc.to_dict()
+        data = req.data
+        cartorio_id = data.get("cartorio_id")
+
+        if not cartorio_id or user_data.get('cartorio_id') != cartorio_id:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
+        if not data:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
+
+        cartorio_id = data.get("cartorio_id")
+        template_id = data.get("template_id")
+        verified_data = data.get("verified_data")
+
+        if not all([cartorio_id, template_id, verified_data]):
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
+
+        import uuid
+        bucket = storage.bucket()
+
+        template_ref = db.collection("cartorios").document(cartorio_id).collection("templates").document(template_id)
+        template_doc = template_ref.get()
+
+        if not template_doc.exists:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template not found")
+
+        template_info = template_doc.to_dict()
+        gcs_path = template_info.get("gcs_path")
+        required_tags = template_info.get("required_tags", [])
+
+        blob = bucket.blob(gcs_path)
+        if not blob.exists():
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template file missing in storage")
+
+        template_bytes = blob.download_as_bytes()
+
+        from core.generator import generate_document_from_template
+        generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
+
+        output_filename = f"{uuid.uuid4()}.docx"
+        output_path = f"cartorios/{cartorio_id}/generated/{output_filename}"
+
+        out_blob = bucket.blob(output_path)
+        out_blob.upload_from_string(generated_bytes, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        return {"status": "success", "gcs_path": output_path}
+
+    except https_fn.HttpsError as he:
+        raise he
+    except Exception as e:
+        logger.error("Error in generate_document", exc_info=True)
+        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
