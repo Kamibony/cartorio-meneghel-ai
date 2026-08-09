@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useCartorio } from '../hooks/useCartorio';
+import { useAuth } from '../contexts/AuthContext';
 import { auth, db } from '../utils/firebase';
 import { collection, query, getDocs, where, Timestamp } from 'firebase/firestore';
 import { ENV } from '../config/env';
@@ -11,7 +11,7 @@ interface Template {
 }
 
 const MinuteGenerator: React.FC = () => {
-  const { cartorioId } = useCartorio();
+  const { cartorioId, isLoading: isAuthLoading } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [formData, setFormData] = useState<Record<string, string>>({});
@@ -22,7 +22,7 @@ const MinuteGenerator: React.FC = () => {
 
   useEffect(() => {
     const fetchTemplates = async () => {
-      if (!cartorioId) return;
+      if (isAuthLoading || !cartorioId) return;
       try {
         const q = query(
           collection(db, 'templates'),

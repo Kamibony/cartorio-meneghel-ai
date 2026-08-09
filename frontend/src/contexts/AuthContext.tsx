@@ -47,8 +47,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   setCartorioId(data.cartorio_id);
                   setUserRole(data.role);
               } else {
-                  setCartorioId('default_cartorio'); // Fallback
-                  setUserRole('escrevente');
+                  setCartorioId(null);
+                  setUserRole(null);
               }
               setIsLoading(false);
           }, (error) => {
@@ -57,8 +57,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           });
         } catch (e) {
           console.error("Failed to set up user context listener", e);
-          setCartorioId('default_cartorio');
-          setUserRole('escrevente');
+          setCartorioId(null);
+          setUserRole(null);
           setIsLoading(false);
         }
       } else {

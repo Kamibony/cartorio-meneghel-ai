@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useDocumentUpload } from '../hooks/useDocumentUpload';
-import { useCartorio } from '../hooks/useCartorio';
+import { useAuth } from '../contexts/AuthContext';
 import { ENV } from '../config/env';
 import { diff_match_patch } from 'diff-match-patch';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -76,7 +76,7 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth, draftId, initial
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadAndExtract, isUploading, isExtracting } = useDocumentUpload();
-  const { cartorioId } = useCartorio();
+  const { cartorioId } = useAuth();
 
   // Persist state to Firestore using debouncing
   const saveTimeoutRef = useRef<number | null>(null);
