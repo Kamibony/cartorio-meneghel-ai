@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useCartorio } from '../hooks/useCartorio';
+import { useAuth } from '../contexts/AuthContext';
 import { auth, db } from '../utils/firebase';
 import { collection, query, getDocs, doc, updateDoc, where } from 'firebase/firestore';
 import { ENV } from '../config/env';
@@ -16,7 +16,7 @@ interface Template {
 }
 
 const TemplateManager: React.FC = () => {
-  const { cartorioId } = useCartorio();
+  const { cartorioId, isLoading: isAuthLoading } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ const TemplateManager: React.FC = () => {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   const fetchTemplates = async () => {
-    if (!cartorioId) return;
+    if (isAuthLoading || !cartorioId) return;
     setIsLoading(true);
     setError(null);
     try {

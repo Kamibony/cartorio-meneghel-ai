@@ -6,13 +6,13 @@ import { useAuth } from '../contexts/AuthContext';
 import type { Minuta } from '../types/firestore';
 
 const EscreventeInbox: React.FC = () => {
-  const { cartorioId, userRole } = useAuth();
+  const { cartorioId, userRole, isLoading: isAuthLoading } = useAuth();
   const [tasks, setTasks] = useState<{ [id: string]: Minuta }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [requestingSupportId, setRequestingSupportId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!cartorioId) return;
+    if (isAuthLoading || !cartorioId) return;
 
     setIsLoading(true);
     const minutasRef = collection(db, 'minutas');
