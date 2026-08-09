@@ -93,6 +93,14 @@ function Dashboard() {
     };
   }, [currentUser, userRole]);
 
+  // Force current view update when role changes after hydration
+  useEffect(() => {
+    if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(currentView)) {
+      setCurrentView('master_dashboard');
+      window.history.replaceState({}, '', '?view=master_dashboard');
+    }
+  }, [userRole, currentView]);
+
   if (isLoading || isHydrating) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -110,14 +118,6 @@ function Dashboard() {
   if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(activeView)) {
       activeView = 'master_dashboard';
   }
-
-  // Force current view update when role changes after hydration
-  useEffect(() => {
-    if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(currentView)) {
-      setCurrentView('master_dashboard');
-      window.history.replaceState({}, '', '?view=master_dashboard');
-    }
-  }, [userRole, currentView]);
 
   const handleNavClick = (view: typeof currentView) => {
       setCurrentView(view);
