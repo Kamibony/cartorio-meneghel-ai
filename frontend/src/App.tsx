@@ -7,11 +7,13 @@ import DataChecker from './components/DataChecker';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import TeamManagement from './components/TeamManagement';
+import TemplateManager from './components/TemplateManager';
+import MinuteGenerator from './components/MinuteGenerator';
 
 function Dashboard() {
   const [groundTruth, setGroundTruth] = useState<any>(null);
   const [initialDraftState, setInitialDraftState] = useState<any>(null);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'team_management'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'team_management' | 'template_manager' | 'minute_generator'>('dashboard');
   const { currentUser, userRole, isLoading } = useAuth();
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
@@ -95,22 +97,36 @@ function Dashboard() {
         </div>
 
         <div className="flex items-center space-x-6">
-          {userRole === 'cartorio_admin' && (
-            <nav className="flex space-x-4">
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                className={`text-sm font-medium ${currentView === 'dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Validação
-              </button>
-              <button
-                onClick={() => setCurrentView('team_management')}
-                className={`text-sm font-medium ${currentView === 'team_management' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Gestão de Equipe
-              </button>
-            </nav>
-          )}
+          <nav className="flex space-x-4">
+            <button
+              onClick={() => setCurrentView('dashboard')}
+              className={`text-sm font-medium ${currentView === 'dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Validação
+            </button>
+            <button
+              onClick={() => setCurrentView('minute_generator')}
+              className={`text-sm font-medium ${currentView === 'minute_generator' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Gerador de Minutas
+            </button>
+            {userRole === 'cartorio_admin' && (
+              <>
+                <button
+                  onClick={() => setCurrentView('template_manager')}
+                  className={`text-sm font-medium ${currentView === 'template_manager' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Templates
+                </button>
+                <button
+                  onClick={() => setCurrentView('team_management')}
+                  className={`text-sm font-medium ${currentView === 'team_management' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Gestão de Equipe
+                </button>
+              </>
+            )}
+          </nav>
 
           <div className="text-sm text-gray-600">
             {currentUser.email}
@@ -138,11 +154,19 @@ function Dashboard() {
               }} />
             </section>
           </div>
-        ) : (
+        ) : currentView === 'team_management' ? (
           <div className="h-full overflow-auto">
             <TeamManagement />
           </div>
-        )}
+        ) : currentView === 'template_manager' ? (
+          <div className="h-full overflow-auto">
+            <TemplateManager />
+          </div>
+        ) : currentView === 'minute_generator' ? (
+          <div className="h-full overflow-auto">
+            <MinuteGenerator />
+          </div>
+        ) : null}
       </main>
     </div>
   );

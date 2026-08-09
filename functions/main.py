@@ -752,13 +752,10 @@ def generate_document(req: https_fn.CallableRequest) -> dict:
         from core.generator import generate_document_from_template
         generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
 
-        output_filename = f"{uuid.uuid4()}.docx"
-        output_path = f"cartorios/{cartorio_id}/generated/{output_filename}"
+        import base64
+        base64_encoded = base64.b64encode(generated_bytes).decode('utf-8')
 
-        out_blob = bucket.blob(output_path)
-        out_blob.upload_from_string(generated_bytes, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-        return {"status": "success", "gcs_path": output_path}
+        return {"status": "success", "file_base64": base64_encoded}
 
     except https_fn.HttpsError as he:
         raise he
