@@ -29,6 +29,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (user) {
         try {
+          // Force token refresh on load to ensure custom claims are fresh (for Admin UI access)
+          await user.getIdToken(true);
+
           // Set up real-time listener for the user document to act as an immediate kill switch
           snapshotUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (userDoc) => {
               if (userDoc.exists()) {

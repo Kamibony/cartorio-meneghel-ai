@@ -25,7 +25,8 @@ const MinuteGenerator: React.FC = () => {
       if (!cartorioId) return;
       try {
         const q = query(
-          collection(db, 'cartorios', cartorioId, 'templates'),
+          collection(db, 'templates'),
+          where('cartorio_id', '==', cartorioId),
           where('is_active', '==', true)
         );
         const snapshot = await getDocs(q);
