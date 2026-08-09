@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useCartorio } from '../hooks/useCartorio';
 import { auth, db } from '../utils/firebase';
-import { collection, query, getDocs, where } from 'firebase/firestore';
+import { collection, query, getDocs, where, Timestamp } from 'firebase/firestore';
 import { ENV } from '../config/env';
 
 interface Template {
@@ -18,6 +18,7 @@ const MinuteGenerator: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState(''); // ID to import data from
+  const [importedAt, setImportedAt] = useState<Timestamp | null>(null);
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -78,6 +79,12 @@ const MinuteGenerator: React.FC = () => {
          }
 
          const sourceData = minutaData.human_final_data || minutaData.ai_extracted_data || {};
+
+         if (minutaData.updatedAt) {
+             setImportedAt(minutaData.updatedAt);
+         } else {
+             setImportedAt(null);
+         }
 
          // Perform exact mapping if keys match, otherwise serialize into a structured string context
          const newFormData = { ...formData };
@@ -141,7 +148,12 @@ const MinuteGenerator: React.FC = () => {
           data: {
              cartorio_id: cartorioId,
              template_id: selectedTemplateId,
-             verified_data: formData
+             verified_data: formData,
+             draft_id: draftId || null,
+             imported_at: importedAt ? {
+                 _seconds: importedAt.seconds,
+                 _nanoseconds: importedAt.nanoseconds
+             } : null
           }
         })
       });

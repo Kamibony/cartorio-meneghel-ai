@@ -100,7 +100,11 @@ def extract_tags_from_template(template_bytes: bytes) -> list:
     """
     Extracts Jinja2 tags from a .docx template.
     """
-    f = io.BytesIO(template_bytes)
-    doc = DocxTemplate(f)
-    tags = doc.get_undeclared_template_variables()
-    return list(tags)
+    try:
+        f = io.BytesIO(template_bytes)
+        doc = DocxTemplate(f)
+        tags = doc.get_undeclared_template_variables()
+        return list(tags)
+    except Exception as e:
+        logger.error(f"Error extracting tags from template: {e}")
+        raise ValueError(f"Invalid docx template or malformed tags: {str(e)}")
