@@ -13,10 +13,10 @@ import EscreventeInbox from './components/EscreventeInbox';
 import MasterDashboard from './components/MasterDashboard';
 
 function Dashboard() {
+  const { currentUser, userRole, isLoading } = useAuth();
   const [groundTruth, setGroundTruth] = useState<any>(null);
   const [initialDraftState, setInitialDraftState] = useState<any>(null);
   const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator' | 'master_dashboard'>('inbox');
-  const { currentUser, userRole, isLoading } = useAuth();
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
 
@@ -27,6 +27,8 @@ function Dashboard() {
       const viewParam = params.get('view') as any;
       if (viewParam && ['inbox', 'dashboard', 'team_management', 'template_manager', 'minute_generator', 'master_dashboard'].includes(viewParam)) {
           setCurrentView(viewParam);
+      } else if (!viewParam && userRole === 'super_admin') {
+          setCurrentView('master_dashboard');
       }
       const id = params.get('docId');
       if (id && userRole) {
@@ -103,6 +105,12 @@ function Dashboard() {
     return <Login />;
   }
 
+  // Prevent unauthorized views from rendering for super_admin
+  let activeView = currentView;
+  if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(activeView)) {
+      activeView = 'master_dashboard';
+  }
+
   const handleNavClick = (view: typeof currentView) => {
       setCurrentView(view);
       window.history.pushState({}, '', `?view=${view}`);
@@ -138,34 +146,38 @@ function Dashboard() {
                 </div>
                 <button
                   onClick={() => handleNavClick('master_dashboard')}
-                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md mb-4 ${currentView === 'master_dashboard' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md mb-4 ${activeView === 'master_dashboard' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
                 >
                   Master Dashboard
                 </button>
               </>
             )}
 
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
-              Workspace
-            </div>
-            <button
-              onClick={() => handleNavClick('inbox')}
-              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'inbox' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
-            >
-              Fila de Tarefas (Inbox)
-            </button>
-            <button
-              onClick={() => handleNavClick('dashboard')}
-              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
-            >
-              Validação
-            </button>
-            <button
-              onClick={() => handleNavClick('minute_generator')}
-              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'minute_generator' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
-            >
-              Gerador de Minutas
-            </button>
+            {userRole !== 'super_admin' && (
+              <>
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
+                  Workspace
+                </div>
+                <button
+                  onClick={() => handleNavClick('inbox')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'inbox' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  Fila de Tarefas (Inbox)
+                </button>
+                <button
+                  onClick={() => handleNavClick('dashboard')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  Validação
+                </button>
+                <button
+                  onClick={() => handleNavClick('minute_generator')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'minute_generator' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  Gerador de Minutas
+                </button>
+              </>
+            )}
 
             {(userRole === 'cartorio_admin' || userRole === 'super_admin') && (
               <>
@@ -191,9 +203,9 @@ function Dashboard() {
 
         {/* Main Content Area */}
         <main className="flex-1 p-6 overflow-hidden relative">
-          {currentView === 'inbox' ? (
+          {activeView === 'inbox' ? (
             <EscreventeInbox />
-          ) : currentView === 'dashboard' ? (
+          ) : activeView === 'dashboard' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
               <section className="h-full overflow-hidden">
                 <DocumentViewer onDataExtracted={setGroundTruth} draftId={draftId} />
@@ -205,23 +217,23 @@ function Dashboard() {
                    setDraftId(null);
                    setInitialDraftState(null);
                    window.history.pushState({}, '', window.location.pathname);
-                   setCurrentView('inbox');
+                   setCurrentView(userRole === 'super_admin' ? 'master_dashboard' : 'inbox');
                 }} />
               </section>
             </div>
-          ) : currentView === 'team_management' ? (
+          ) : activeView === 'team_management' ? (
             <div className="h-full overflow-auto">
               <TeamManagement />
             </div>
-          ) : currentView === 'template_manager' ? (
+          ) : activeView === 'template_manager' ? (
             <div className="h-full overflow-auto">
               <TemplateManager />
             </div>
-          ) : currentView === 'minute_generator' ? (
+          ) : activeView === 'minute_generator' ? (
             <div className="h-full overflow-auto">
               <MinuteGenerator />
             </div>
-          ) : currentView === 'master_dashboard' ? (
+          ) : activeView === 'master_dashboard' ? (
             <div className="h-full overflow-auto">
               <MasterDashboard />
             </div>
