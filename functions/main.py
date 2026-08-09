@@ -45,7 +45,7 @@ def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
         extracted_data = extractor.extract_batch(gcs_uris)
 
         return https_fn.Response(
-            json.dumps({"status": "success", "data": extracted_data}),
+            json.dumps({"status": "success", "data": extracted_data}, ensure_ascii=False, allow_nan=False),
             status=200,
             content_type="application/json"
         )
@@ -115,7 +115,7 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         extracted_data = extractor.extract(gcs_uri, document_type=document_type)
 
         return https_fn.Response(
-            json.dumps({"status": "success", "data": extracted_data}),
+            json.dumps({"status": "success", "data": extracted_data}, ensure_ascii=False, allow_nan=False),
             status=200,
             content_type="application/json"
         )

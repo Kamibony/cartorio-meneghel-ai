@@ -297,12 +297,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth, draftId, initial
         }),
       });
 
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Erro no servidor: Resposta não está em formato JSON.');
+      const responseText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseErr) {
+        throw new Error(`Erro no servidor: Resposta não está em formato JSON. Corpo: ${responseText.substring(0, 100)}`);
       }
-
-      const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Ocorreu um erro desconhecido durante a formatação.');
       }
@@ -453,12 +454,13 @@ const DataChecker: React.FC<DataCheckerProps> = ({ groundTruth, draftId, initial
         }),
       });
 
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Erro no servidor: Resposta não está em formato JSON. Por favor, tente novamente.');
+      const responseText = await response.text();
+      let data: ValidationResponse;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseErr) {
+        throw new Error(`Erro no servidor: Resposta não está em formato JSON. Corpo: ${responseText.substring(0, 100)}`);
       }
-
-      const data: ValidationResponse = await response.json();
 
       if (!response.ok) {
         if (response.status === 429) {
