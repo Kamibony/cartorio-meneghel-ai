@@ -39,7 +39,7 @@ service cloud.firestore {
     // Cartorios Collection (Multi-tenant Root)
     match /cartorios/{cartorioId} {
 
-      // Minutas Collection
+      // Minutas Collection (deprecated, moved to root but kept here for backward compatibility)
       match /minutas/{minutaId} {
         // Any user belonging to the cartorio can read/write minutas
         allow read, write: if hasRole('super_admin') || belongsToCartorio(cartorioId);
@@ -56,6 +56,25 @@ service cloud.firestore {
         // Audit logs are immutable (no update or delete)
         allow update, delete: if false;
       }
+    }
+
+    // Global Minutas Collection
+    match /minutas/{minutaId} {
+      // Allow read/write if super_admin or user belongs to the cartorio associated with the minuta
+      allow read, write: if hasRole('super_admin') || (
+        (resource == null || belongsToCartorio(resource.data.cartorio_id)) &&
+        (request.resource == null || belongsToCartorio(request.resource.data.cartorio_id))
+      );
+    }
+
+    // Global Templates Collection
+    match /templates/{templateId} {
+      allow read: if hasRole('super_admin') || belongsToCartorio(resource.data.cartorio_id);
+      allow write: if hasRole('super_admin') || (
+        (resource == null || belongsToCartorio(resource.data.cartorio_id)) &&
+        (request.resource == null || belongsToCartorio(request.resource.data.cartorio_id)) &&
+        hasRole('cartorio_admin')
+      );
     }
   }
 }

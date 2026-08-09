@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useCartorio } from '../hooks/useCartorio';
 import { auth, db } from '../utils/firebase';
-import { collection, query, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, where } from 'firebase/firestore';
 import { ENV } from '../config/env';
 
 interface Template {
@@ -31,7 +31,10 @@ const TemplateManager: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const q = query(collection(db, 'cartorios', cartorioId, 'templates'));
+      const q = query(
+        collection(db, 'templates'),
+        where('cartorio_id', '==', cartorioId)
+      );
       const querySnapshot = await getDocs(q);
       const fetchedTemplates: Template[] = [];
       querySnapshot.forEach((doc) => {
@@ -125,7 +128,7 @@ const TemplateManager: React.FC = () => {
   const handleToggleActive = async (templateId: string, currentStatus: boolean) => {
     if (!cartorioId) return;
     try {
-      const templateRef = doc(db, 'cartorios', cartorioId, 'templates', templateId);
+      const templateRef = doc(db, 'templates', templateId);
       await updateDoc(templateRef, { is_active: !currentStatus });
       fetchTemplates();
     } catch (err) {
