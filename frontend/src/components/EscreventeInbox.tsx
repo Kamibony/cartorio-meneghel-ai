@@ -12,7 +12,7 @@ const EscreventeInbox: React.FC = () => {
   const [requestingSupportId, setRequestingSupportId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthLoading || !cartorioId) return;
+    if (isAuthLoading || !cartorioId || userRole === 'super_admin') return;
 
     setIsLoading(true);
     const minutasRef = collection(db, 'minutas');

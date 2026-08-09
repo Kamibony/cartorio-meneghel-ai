@@ -9,11 +9,13 @@ service cloud.firestore {
     }
 
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let doc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return doc != null ? doc.data : null;
     }
 
     function isActiveUser() {
-      return getUserData().status != 'revoked';
+      let data = getUserData();
+      return data == null || !('status' in data) || data.status != 'revoked';
     }
 
     function hasRole(role) {

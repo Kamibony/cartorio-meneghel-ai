@@ -31,6 +31,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
           // Force token refresh on load to ensure custom claims are fresh (for Admin UI access)
           await user.getIdToken(true);
+          const tokenResult = await user.getIdTokenResult();
+          const tokenRole = tokenResult.claims.role as UserRole | undefined;
+          const tokenCartorioId = tokenResult.claims.cartorio_id as string | undefined;
 
           // Set up real-time listener for the user document to act as an immediate kill switch
           snapshotUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (userDoc) => {
@@ -44,19 +47,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                       return;
                   }
 
-                  setCartorioId(data.cartorio_id);
-                  setUserRole(data.role);
+                  setCartorioId(tokenCartorioId || data.cartorio_id || null);
+                  setUserRole(tokenRole || data.role || null);
               } else {
-                  setCartorioId(null);
-                  setUserRole(null);
+                  setCartorioId(tokenCartorioId || null);
+                  setUserRole(tokenRole || null);
               }
               setIsLoading(false);
           }, (error) => {
               console.error("User snapshot listener error:", error);
+              // Fallback to token claims if Firestore listener fails (e.g. permission denied)
+              setCartorioId(tokenCartorioId || null);
+              setUserRole(tokenRole || null);
               setIsLoading(false);
           });
         } catch (e) {
           console.error("Failed to set up user context listener", e);
+          // If we fail before or during token fetch, these might not be defined.
+          // But if we fail later, they might be. Since they are let/const scoped inside the try block,
+          // they won't be accessible here. We should declare them outside.
           setCartorioId(null);
           setUserRole(null);
           setIsLoading(false);

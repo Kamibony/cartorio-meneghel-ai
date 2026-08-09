@@ -16,7 +16,7 @@ interface Template {
 }
 
 const TemplateManager: React.FC = () => {
-  const { cartorioId, isLoading: isAuthLoading } = useAuth();
+  const { cartorioId, userRole, isLoading: isAuthLoading } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ const TemplateManager: React.FC = () => {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   const fetchTemplates = async () => {
-    if (isAuthLoading || !cartorioId) return;
+    if (isAuthLoading || !cartorioId || userRole === 'super_admin') return;
     setIsLoading(true);
     setError(null);
     try {

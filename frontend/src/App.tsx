@@ -16,7 +16,7 @@ function Dashboard() {
   const { currentUser, userRole, isLoading } = useAuth();
   const [groundTruth, setGroundTruth] = useState<any>(null);
   const [initialDraftState, setInitialDraftState] = useState<any>(null);
-  const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator' | 'master_dashboard'>('inbox');
+  const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator' | 'master_dashboard'>(userRole === 'super_admin' ? 'master_dashboard' : 'inbox');
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
 
@@ -27,7 +27,7 @@ function Dashboard() {
       const viewParam = params.get('view') as any;
       if (viewParam && ['inbox', 'dashboard', 'team_management', 'template_manager', 'minute_generator', 'master_dashboard'].includes(viewParam)) {
           setCurrentView(viewParam);
-      } else if (!viewParam && userRole === 'super_admin') {
+      } else if (userRole === 'super_admin' && (!viewParam || ['inbox', 'dashboard', 'minute_generator'].includes(viewParam))) {
           setCurrentView('master_dashboard');
       }
       const id = params.get('docId');
@@ -110,6 +110,14 @@ function Dashboard() {
   if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(activeView)) {
       activeView = 'master_dashboard';
   }
+
+  // Force current view update when role changes after hydration
+  useEffect(() => {
+    if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(currentView)) {
+      setCurrentView('master_dashboard');
+      window.history.replaceState({}, '', '?view=master_dashboard');
+    }
+  }, [userRole, currentView]);
 
   const handleNavClick = (view: typeof currentView) => {
       setCurrentView(view);
