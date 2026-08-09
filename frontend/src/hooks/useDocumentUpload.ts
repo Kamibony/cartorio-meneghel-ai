@@ -34,7 +34,7 @@ export function useDocumentUpload() {
       const gcsUri = `gs://${bucket}/${fullPath}`;
 
       // 2. Initialize Minuta in Firestore
-      const minutasRef = collection(db, 'cartorios', cartorioId, 'minutas');
+      const minutasRef = collection(db, 'minutas');
       const initialMinuta: Minuta = {
         cartorio_id: cartorioId,
         status: 'processing',
@@ -87,7 +87,7 @@ export function useDocumentUpload() {
 
       // 4. Update Minuta with extracted data
       if (minutaDocRef) {
-        await updateDoc(doc(db, 'cartorios', cartorioId, 'minutas', minutaDocRef.id), {
+        await updateDoc(doc(db, 'minutas', minutaDocRef.id), {
           status: 'hitl_required', // Assume it needs HitL or let backend decide
           ai_extracted_data: extractedData,
           updatedAt: Timestamp.now(),
@@ -101,7 +101,7 @@ export function useDocumentUpload() {
       // Optionally update the minuta state to 'error'
       if (minutaDocRef) {
         try {
-           await updateDoc(doc(db, 'cartorios', cartorioId, 'minutas', minutaDocRef.id), {
+           await updateDoc(doc(db, 'minutas', minutaDocRef.id), {
              status: 'error',
              updatedAt: Timestamp.now(),
            });
