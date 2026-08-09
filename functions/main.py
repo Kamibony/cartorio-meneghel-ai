@@ -666,7 +666,10 @@ def register_template(req: https_fn.CallableRequest) -> dict:
         template_bytes = blob.download_as_bytes()
 
         from core.generator import extract_tags_from_template
-        required_tags = extract_tags_from_template(template_bytes)
+        try:
+            required_tags = extract_tags_from_template(template_bytes)
+        except ValueError as ve:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
 
         doc_ref = db.collection("cartorios").document(cartorio_id).collection("templates").document()
 
@@ -726,9 +729,54 @@ def generate_document(req: https_fn.CallableRequest) -> dict:
         cartorio_id = data.get("cartorio_id")
         template_id = data.get("template_id")
         verified_data = data.get("verified_data")
+        draft_id = data.get("draft_id")
+        imported_at = data.get("imported_at")
 
         if not all([cartorio_id, template_id, verified_data]):
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
+
+        if draft_id and imported_at:
+            # Check for optimistic concurrency
+            minuta_ref = db.collection("minutas").document(draft_id)
+            minuta_doc = minuta_ref.get()
+            if minuta_doc.exists:
+                minuta_data = minuta_doc.to_dict()
+                if minuta_data.get('cartorio_id') != cartorio_id:
+                    raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
+                db_updated_at = minuta_data.get("updatedAt")
+                if db_updated_at:
+                    # Compare timestamps
+                    # FireStore returns datetime objects for timestamps
+                    from datetime import datetime, timezone
+
+                    try:
+                        imported_seconds = imported_at.get('_seconds', 0)
+                        imported_nanos = imported_at.get('_nanoseconds', 0)
+                        imported_dt = datetime.fromtimestamp(imported_seconds + imported_nanos / 1e9, tz=timezone.utc)
+
+                        # Firestore timestamp objects have a timestamp() method, or can be converted.
+                        # Just to be safe, extract seconds/nanos from db_updated_at or use timestamp()
+                        if hasattr(db_updated_at, 'timestamp'):
+                            db_ts = db_updated_at.timestamp()
+                        else:
+                            # Assume it's a datetime
+                            db_ts = db_updated_at.timestamp()
+
+                        imported_ts = imported_dt.timestamp()
+
+                        is_stale = db_ts > imported_ts + 0.001
+                    except Exception as ts_err:
+                        # Log but don't crash if timestamp parsing fails for some reason
+                        logger.error(f"Error parsing timestamps for concurrency check: {ts_err}")
+                        is_stale = False
+
+                    if is_stale:
+                        raise https_fn.HttpsError(
+                            code=https_fn.FunctionsErrorCode.FAILED_PRECONDITION,
+                            message="Race condition detected: Minuta was modified after it was imported. Please re-import the latest data."
+                        )
+
 
         import uuid
         bucket = storage.bucket()
@@ -750,7 +798,10 @@ def generate_document(req: https_fn.CallableRequest) -> dict:
         template_bytes = blob.download_as_bytes()
 
         from core.generator import generate_document_from_template
-        generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
+        try:
+            generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
+        except ValueError as ve:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
 
         import base64
         base64_encoded = base64.b64encode(generated_bytes).decode('utf-8')
