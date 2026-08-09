@@ -10,11 +10,12 @@ import TeamManagement from './components/TeamManagement';
 import TemplateManager from './components/TemplateManager';
 import MinuteGenerator from './components/MinuteGenerator';
 import EscreventeInbox from './components/EscreventeInbox';
+import MasterDashboard from './components/MasterDashboard';
 
 function Dashboard() {
   const [groundTruth, setGroundTruth] = useState<any>(null);
   const [initialDraftState, setInitialDraftState] = useState<any>(null);
-  const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator'>('inbox');
+  const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator' | 'master_dashboard'>('inbox');
   const { currentUser, userRole, isLoading } = useAuth();
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
@@ -24,7 +25,7 @@ function Dashboard() {
     const hydrateState = async () => {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view') as any;
-      if (viewParam && ['inbox', 'dashboard', 'team_management', 'template_manager', 'minute_generator'].includes(viewParam)) {
+      if (viewParam && ['inbox', 'dashboard', 'team_management', 'template_manager', 'minute_generator', 'master_dashboard'].includes(viewParam)) {
           setCurrentView(viewParam);
       }
       const id = params.get('docId');
@@ -130,6 +131,20 @@ function Dashboard() {
         {/* Sidebar */}
         <aside className="w-64 bg-white border-r border-gray-200 flex flex-col p-4 shadow-sm z-0">
           <nav className="flex-1 space-y-1">
+            {userRole === 'super_admin' && (
+              <>
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
+                  Super Admin
+                </div>
+                <button
+                  onClick={() => handleNavClick('master_dashboard')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md mb-4 ${currentView === 'master_dashboard' ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  Master Dashboard
+                </button>
+              </>
+            )}
+
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
               Workspace
             </div>
@@ -205,6 +220,10 @@ function Dashboard() {
           ) : currentView === 'minute_generator' ? (
             <div className="h-full overflow-auto">
               <MinuteGenerator />
+            </div>
+          ) : currentView === 'master_dashboard' ? (
+            <div className="h-full overflow-auto">
+              <MasterDashboard />
             </div>
           ) : null}
         </main>

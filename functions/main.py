@@ -697,6 +697,77 @@ def register_template(req: https_fn.CallableRequest) -> dict:
         logger.error("Error in register_template", exc_info=True)
         raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
 
+@https_fn.on_call(memory=options.MemoryOption.MB_256)
+def grantSupportAccess(req: https_fn.CallableRequest) -> dict:
+    """
+    Grants time-bound Break-Glass support access for a specific document to super_admins.
+    Accepts Callable payload: {"document_id": "...", "duration_hours": int}
+    """
+    if not req.auth:
+        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.UNAUTHENTICATED, message="Unauthenticated")
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import firestore
+        import datetime
+
+        db = firestore.client()
+
+        user_doc = db.collection('users').document(req.auth.uid).get()
+        if not user_doc.exists:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="User not found")
+
+        user_data = user_doc.to_dict()
+        data = req.data
+
+        document_id = data.get("document_id")
+        duration_hours = data.get("duration_hours", 24)
+
+        if not document_id:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing document_id")
+
+        if user_data.get('role') != 'cartorio_admin':
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Only cartorio_admin can grant support access")
+
+        minuta_ref = db.collection('minutas').document(document_id)
+        minuta_doc = minuta_ref.get()
+
+        if not minuta_doc.exists:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Document not found")
+
+        minuta_data = minuta_doc.to_dict()
+        if minuta_data.get('cartorio_id') != user_data.get('cartorio_id'):
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Document does not belong to your cartorio")
+
+        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=duration_hours)
+
+        minuta_ref.update({
+            "support_grant": {
+                "expires_at": expires_at,
+                "granted_by": req.auth.uid
+            }
+        })
+
+        from core.audit import log_audit_event_async
+        event_data = {
+            "event_type": "support_access_granted",
+            "document_id": document_id,
+            "cartorio_id": user_data.get('cartorio_id'),
+            "duration_hours": duration_hours,
+            "granted_by": req.auth.uid,
+            "project_id": os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        }
+        log_audit_event_async(event_data)
+
+        return {"status": "success", "message": f"Support access granted for {duration_hours} hours"}
+
+    except https_fn.HttpsError as he:
+        raise he
+    except Exception as e:
+        logger.error("Error in grantSupportAccess", exc_info=True)
+        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
+
 @https_fn.on_call(memory=options.MemoryOption.MB_512, timeout_sec=540)
 def generate_document(req: https_fn.CallableRequest) -> dict:
     """
