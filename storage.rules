@@ -24,13 +24,12 @@ service firebase.storage {
 
       match /generated/{documentId} {
         // Any user in the cartorio can read/write generated documents
-        allow read, write: if hasRole('super_admin') || belongsToCartorio(cartorioId);
+        allow read, write: if belongsToCartorio(cartorioId);
       }
 
       match /scans/{documentId} {
-        // Hotfix: Allow any authenticated user to upload scans to unblock E2E testing
-        // TODO: Revert to belongsToCartorio(cartorioId) after implementing Custom Claims
-        allow read, write: if hasRole('super_admin') || belongsToCartorio(cartorioId);
+        // Restricted to cartorio users only for LGPD compliance
+        allow read, write: if belongsToCartorio(cartorioId);
       }
     }
   }

@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import type { Minuta } from '../types/firestore';
 
 const EscreventeInbox: React.FC = () => {
-  const { cartorioId } = useAuth();
+  const { cartorioId, userRole } = useAuth();
   const [tasks, setTasks] = useState<{ [id: string]: Minuta }>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [requestingSupportId, setRequestingSupportId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cartorioId) return;
@@ -49,6 +51,27 @@ const EscreventeInbox: React.FC = () => {
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
+  const handleRequestSupport = async (e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation(); // Prevent row click
+
+    if (!window.confirm("Deseja conceder acesso temporário (24h) ao suporte (Super Admin) para este documento? Esta ação será registrada.")) {
+        return;
+    }
+
+    setRequestingSupportId(taskId);
+    try {
+        const functions = getFunctions();
+        const grantSupportAccess = httpsCallable(functions, 'grantSupportAccess');
+        await grantSupportAccess({ document_id: taskId, duration_hours: 24 });
+        alert("Acesso de suporte concedido com sucesso por 24 horas.");
+    } catch (error: any) {
+        console.error("Erro ao solicitar suporte:", error);
+        alert(`Erro: ${error.message || 'Falha ao solicitar suporte'}`);
+    } finally {
+        setRequestingSupportId(null);
+    }
+  };
+
   const processingTasks = Object.values(tasks).filter(t => t.status === 'processing');
   const hitlRequiredTasks = Object.values(tasks).filter(t => t.status === 'hitl_required');
   const completedTasks = Object.values(tasks).filter(t => t.status === 'completed');
@@ -75,10 +98,19 @@ const EscreventeInbox: React.FC = () => {
                 <p className="text-sm font-medium text-gray-900">{task.document_type || 'Documento Desconhecido'}</p>
                 <p className="text-xs text-gray-500 mt-1">ID: {task.id}</p>
               </div>
-              <div className="text-right">
-                <span className="text-xs text-gray-400">
+              <div className="text-right flex flex-col items-end">
+                <span className="text-xs text-gray-400 mb-2">
                   {task.createdAt ? new Date(task.createdAt.toMillis()).toLocaleString() : ''}
                 </span>
+                {userRole === 'cartorio_admin' && (
+                    <button
+                        onClick={(e) => handleRequestSupport(e, task.id!)}
+                        disabled={requestingSupportId === task.id}
+                        className={`text-xs px-2 py-1 rounded border ${requestingSupportId === task.id ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
+                    >
+                        {requestingSupportId === task.id ? 'Solicitando...' : 'Solicitar Suporte'}
+                    </button>
+                )}
               </div>
             </li>
           ))}
