@@ -42,16 +42,11 @@ Module 2 focuses on securely generating and formatting the final legal documents
 *   **Smart Payload:** The Gemini model (e.g., 2.5 family) acts strictly as a grammar engine via Pydantic Structured Outputs to generate contextual text blocks based *only* on the verified Ground Truth.
 *   **Dumb Template:** The generated text blocks are injected into `.docx` files using `docxtpl` (Jinja2 syntax) to perfectly preserve legal formatting and styling, separating content generation from visual presentation.
 
-### Remaining Gaps
-*   **Template Management:** Full CRUD interfaces for managing `.docx` templates and their extracted Jinja2 tags in the multi-tenant `templates` Firestore collection need refinement.
-*   **Financial Footers:** Safe extraction and re-injection of official financial footers (like 'Emolumentos') must be hardened (currently using regex `r'(?im)^(\s*emolumentos:\s*R\$[\s\S]*)'`) to guarantee the LLM never recalculates them.
-*   **Python Backend Data Models:** Transitioning the remaining unstructured dictionaries (`Dict[str, Any]`) to strict Pydantic models for native schema enforcement.
-
-### Planned Implementation Flow
-1.  **Template Registry:** Finalize the multi-tenant `templates` Firestore schema and the GCS storage path for `.docx` templates.
-2.  **Payload Generation Engine:** Implement the Gemini grammar engine strictly scoped by Pydantic models to output structured data payloads matching the template tags.
-3.  **Document Assembly Service:** Finalize the `docxtpl` integration to merge the "Smart Payload" with the "Dumb Template".
-4.  **Frontend Integration:** Provide a user interface to select a template, trigger generation, and download the finalized `.docx`.
+### Solved Gaps & Implemented Features
+*   **Template Management:** Full interface for managing `.docx` templates and their extracted Jinja2 tags in the multi-tenant `templates` Firestore collection has been implemented through the `TemplateManager.tsx` component.
+*   **Financial Footers:** Safe extraction and re-injection of official financial footers (like 'Emolumentos') and values are now hardened by separating them into "Literal Tags" that completely bypass the Vertex AI call and are directly injected into the `docxtpl` payload context.
+*   **Payload Generation Engine:** The generator utilizes Vertex AI with Pydantic structured output constraints purely as a grammar engine, ensuring perfect compliance with the Jinja2 tags of the targeted template.
+*   **Frontend Integration:** "Gerador de Minutas" (`MinuteGenerator.tsx`) component implemented to select a template, gather dynamic manual inputs or import verified `human_final_data` from Module 1, and directly download the resulting base64 `.docx` payload returned from the backend.
 
 ## 3. Infrastructure & Testing Guardrails
 
