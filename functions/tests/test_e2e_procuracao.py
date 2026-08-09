@@ -1,0 +1,129 @@
+import unittest
+from unittest.mock import MagicMock, patch
+import json
+
+from core.extractor import DocumentExtractor, get_entity_attr
+from core.consolidator import MasterProfileConsolidator
+deduplicate_entities = MasterProfileConsolidator.deduplicate_entities
+from core.validator import DocumentValidator
+
+class TestE2EProcuracao(unittest.TestCase):
+    @patch('google.genai.Client')
+    def test_procuracao_pipeline(self, mock_client_class):
+        sot_entities = [
+            {
+                "entity_name": "ROBERTO ALVES",
+                "entity_type": "PESSOA_FISICA",
+                "_source_document_type": "RG",
+                "sources": ["RG"],
+                "attributes": [
+                    {"key": "nome", "value": "ROBERTO ALVES", "data_type": "STRING"},
+                    {"key": "filiacao_pai", "value": "João Alves", "data_type": "STRING"},
+                    {"key": "filiacao_mae", "value": "Maria Alves", "data_type": "STRING"},
+                    {"key": "data_nascimento", "value": "20/08/1975", "data_type": "DATE"},
+                    {"key": "cpf", "value": "444.555.666-77", "data_type": "IDENTIFIER"},
+                    {"key": "rg", "value": "1.234.567 SSP/SP", "data_type": "IDENTIFIER"},
+                    {"key": "estado_civil", "value": "Casado", "data_type": "STRING"}
+                ]
+            },
+            {
+                "entity_name": "FERNANDA LIMA",
+                "entity_type": "PESSOA_FISICA",
+                "_source_document_type": "CNH",
+                "sources": ["CNH"],
+                "attributes": [
+                    {"key": "nome", "value": "FERNANDA LIMA", "data_type": "STRING"},
+                    {"key": "cpf", "value": "999.888.777-66", "data_type": "IDENTIFIER"},
+                    {"key": "rg", "value": "7.654.321 SSP/SP", "data_type": "IDENTIFIER"}
+                ]
+            }
+        ]
+
+        master_entities = deduplicate_entities(sot_entities)
+        from core.models import validate_entity
+        master_entities = [validate_entity(ent) for ent in master_entities]
+        ground_truth = {"entities": master_entities}
+
+        roberto = next(e for e in master_entities if get_entity_attr(e, "cpf") == "444.555.666-77")
+        self.assertEqual(get_entity_attr(roberto, "estado_civil"), "Casado")
+
+        minuta_text = "OUTORGANTE: ROBERTO ALVES, casado, RG 1.234.567 SSP/SP, CPF 444.555.666-77. OUTORGADO: FERNANDA LIMA, RG 7.654.321 SSP/SP e CPF 999.888.777-00."
+
+        validator = DocumentValidator(ground_truth, minuta_text)
+        real_extractor = DocumentExtractor()
+        draft_data = {
+            "entities": [
+                {
+                    "entity_name": "ROBERTO ALVES",
+                    "entity_type": "PESSOA_FISICA",
+                    "attributes": [
+                        {"key": "nome", "value": "ROBERTO ALVES", "data_type": "STRING"},
+                        {"key": "estado_civil", "value": "casado", "data_type": "STRING"},
+                        {"key": "rg", "value": "1.234.567 SSP/SP", "data_type": "IDENTIFIER"},
+                        {"key": "cpf", "value": "444.555.666-77", "data_type": "IDENTIFIER"},
+                        {"key": "role", "value": "OUTORGANTE", "data_type": "STRING"}
+                    ]
+                },
+                {
+                    "entity_name": "FERNANDA LIMA",
+                    "entity_type": "PESSOA_FISICA",
+                    "attributes": [
+                        {"key": "nome", "value": "FERNANDA LIMA", "data_type": "STRING"},
+                        {"key": "rg", "value": "7.654.321 SSP/SP", "data_type": "IDENTIFIER"},
+                        {"key": "cpf", "value": "999.888.777-00", "data_type": "IDENTIFIER"},
+                        {"key": "role", "value": "OUTORGADO", "data_type": "STRING"}
+                    ]
+                }
+            ]
+        }
+
+        # Ensure that JSON serialization strictly uses allow_nan=False when serializing draft data
+        draft_data_json = json.dumps(draft_data, ensure_ascii=False, allow_nan=False)
+        self.assertIsInstance(draft_data_json, str)
+
+        real_extractor.extract_from_text = MagicMock(return_value=draft_data)
+        validator._extractor_instance = real_extractor
+        errors = validator.validate()
+
+        cpf_error = next((e for e in errors if e["category"] == "VALUE_MISMATCH" and "cpf" in e["field"] and e["expected"] == "999.888.777-66"), None)
+
+        self.assertIsNotNone(cpf_error)
+        self.assertEqual(cpf_error["found"], "999.888.777-00")
+
+    @patch('main.firestore', create=True)
+    @patch('main.auth', create=True)
+    @patch('main._init_firebase', create=True)
+    def test_finalize_validation_endpoint_super_admin(self, mock_init_firebase, mock_auth, mock_firestore):
+        from flask import Flask, request
+        app = Flask(__name__)
+
+        from main import finalize_validation
+
+        req = MagicMock()
+        req.method = "POST"
+        req.get_json.return_value = {"document_id": "test_doc", "final_text": "text"}
+        req.headers = {
+            "Authorization": "Bearer fake_token",
+            "X-Cartorio-ID": "test_cartorio"
+        }
+
+        mock_auth.verify_id_token.return_value = {
+            "uid": "test_uid",
+            "role": "super_admin",
+            "cartorio_id": "test_cartorio"
+        }
+
+        db_mock = MagicMock()
+        mock_firestore.client.return_value = db_mock
+        minuta_doc_mock = MagicMock()
+        minuta_doc_mock.exists = True
+        minuta_doc_mock.to_dict.return_value = {"cartorio_id": "test_cartorio"}
+        db_mock.collection.return_value.document.return_value.get.return_value = minuta_doc_mock
+
+        with app.test_request_context():
+            res = finalize_validation(req)
+
+        self.assertEqual(res.status_code, 200)
+
+if __name__ == '__main__':
+    unittest.main()

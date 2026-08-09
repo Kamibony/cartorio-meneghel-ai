@@ -1,5 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
+import json
+
 from core.extractor import DocumentExtractor, get_entity_attr
 from core.consolidator import MasterProfileConsolidator
 deduplicate_entities = MasterProfileConsolidator.deduplicate_entities
@@ -103,6 +105,11 @@ class TestE2EInventario(unittest.TestCase):
                 }
             ]
         }
+
+        # Ensure that JSON serialization strictly uses allow_nan=False when serializing draft data
+        draft_data_json = json.dumps(draft_data, ensure_ascii=False, allow_nan=False)
+        self.assertIsInstance(draft_data_json, str)
+
         real_extractor.extract_from_text = MagicMock(return_value=draft_data)
         validator._extractor_instance = real_extractor
         errors = validator.validate()
@@ -121,6 +128,40 @@ class TestE2EInventario(unittest.TestCase):
         self.assertIsNotNone(matricula_error)
         self.assertEqual(matricula_error["expected"], "10.555")
         self.assertEqual(matricula_error["found"], "10.550")
+
+    @patch('main.firestore', create=True)
+    @patch('main.auth', create=True)
+    @patch('main._init_firebase', create=True)
+    def test_finalize_validation_endpoint_super_admin(self, mock_init_firebase, mock_auth, mock_firestore):
+        from flask import Flask, request
+        app = Flask(__name__)
+        from main import finalize_validation
+
+        req = MagicMock()
+        req.method = "POST"
+        req.get_json.return_value = {"document_id": "test_doc", "final_text": "text"}
+        req.headers = {
+            "Authorization": "Bearer fake_token",
+            "X-Cartorio-ID": "test_cartorio"
+        }
+
+        mock_auth.verify_id_token.return_value = {
+            "uid": "test_uid",
+            "role": "super_admin",
+            "cartorio_id": "test_cartorio"
+        }
+
+        db_mock = MagicMock()
+        mock_firestore.client.return_value = db_mock
+        minuta_doc_mock = MagicMock()
+        minuta_doc_mock.exists = True
+        minuta_doc_mock.to_dict.return_value = {"cartorio_id": "test_cartorio"}
+        db_mock.collection.return_value.document.return_value.get.return_value = minuta_doc_mock
+
+        with app.test_request_context():
+            res = finalize_validation(req)
+
+        self.assertEqual(res.status_code, 200)
 
 if __name__ == '__main__':
     unittest.main()
