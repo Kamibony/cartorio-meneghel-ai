@@ -41,8 +41,10 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             return https_fn.Response(json.dumps({"error": "Caller user not found in database"}), status=403)
 
         caller_data = caller_doc.to_dict()
-        caller_role = caller_data.get("role")
-        caller_cartorio = caller_data.get("cartorio_id")
+
+        # Use token claims if available, otherwise fallback to database document
+        caller_role = decoded_token.get("role") or caller_data.get("role")
+        caller_cartorio = decoded_token.get("cartorio_id") or caller_data.get("cartorio_id")
 
         if caller_role not in ["super_admin", "cartorio_admin"]:
             return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)
@@ -132,8 +134,10 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
             return https_fn.Response(json.dumps({"error": "Caller user not found in database"}), status=403)
 
         caller_data = caller_doc.to_dict()
-        caller_role = caller_data.get("role")
-        caller_cartorio = caller_data.get("cartorio_id")
+
+        # Use token claims if available, otherwise fallback to database document
+        caller_role = decoded_token.get("role") or caller_data.get("role")
+        caller_cartorio = decoded_token.get("cartorio_id") or caller_data.get("cartorio_id")
 
         if caller_role not in ["super_admin", "cartorio_admin"]:
             return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)

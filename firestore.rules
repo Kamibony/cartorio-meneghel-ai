@@ -48,6 +48,8 @@ service cloud.firestore {
     // Cartorios Collection (Multi-tenant Root)
     match /cartorios/{cartorioId} {
       allow read: if hasRole('super_admin') || belongsToCartorio(cartorioId);
+      allow write: if hasRole('super_admin');
+      allow create: if hasRole('super_admin');
 
       // Minutas Collection (deprecated, moved to root but kept here for backward compatibility)
       match /minutas/{minutaId} {
