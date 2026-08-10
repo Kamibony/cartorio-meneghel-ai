@@ -64,10 +64,16 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             target_cartorio_id = data.get("cartorio_id")
 
         # Create user in Firebase Auth
-        new_user = auth.create_user(
-            email=email,
-            email_verified=False
-        )
+        try:
+            new_user = auth.create_user(
+                email=email,
+                email_verified=False
+            )
+        except auth.EmailAlreadyExistsError:
+            raise https_fn.HttpsError(
+                code=https_fn.FunctionsErrorCode.ALREADY_EXISTS,
+                message="Email já cadastrado."
+            )
 
         # Set Custom Claims
         auth.set_custom_user_claims(new_user.uid, {
@@ -97,6 +103,8 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
+    except https_fn.HttpsError as e:
+        return https_fn.Response(json.dumps({"error": e.message}), status=400)
     except Exception as e:
         logger.error(f"Error in inviteEmployee: {e}", exc_info=True)
         return https_fn.Response(json.dumps({"error": str(e)}), status=500)
