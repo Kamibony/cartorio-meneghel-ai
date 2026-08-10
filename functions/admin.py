@@ -57,6 +57,10 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
         if role not in ["escrevente", "cartorio_admin"]:
             return https_fn.Response(json.dumps({"error": "Invalid role requested"}), status=400)
 
+        target_cartorio_id = caller_cartorio
+        if caller_role == "super_admin" and data.get("cartorio_id"):
+            target_cartorio_id = data.get("cartorio_id")
+
         # Create user in Firebase Auth
         new_user = auth.create_user(
             email=email,
@@ -65,7 +69,7 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
 
         # Set Custom Claims
         auth.set_custom_user_claims(new_user.uid, {
-            "cartorio_id": caller_cartorio,
+            "cartorio_id": target_cartorio_id,
             "role": role
         })
 
@@ -79,7 +83,7 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             "uid": new_user.uid,
             "email": email,
             "role": role,
-            "cartorio_id": caller_cartorio,
+            "cartorio_id": target_cartorio_id,
             "status": "active",
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP
