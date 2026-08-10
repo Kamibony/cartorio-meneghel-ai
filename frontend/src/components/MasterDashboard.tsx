@@ -11,6 +11,7 @@ const MasterDashboard = () => {
     const [adminEmail, setAdminEmail] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const fetchCartorios = async () => {
         setLoading(true);
@@ -36,6 +37,7 @@ const MasterDashboard = () => {
     const handleCreateTenant = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        setSuccessMessage(null);
         setIsSubmitting(true);
         try {
             if (!newCartorioId) {
@@ -82,6 +84,7 @@ const MasterDashboard = () => {
             setIsModalOpen(false);
             setNewCartorioId('');
             setAdminEmail('');
+            setSuccessMessage("Tenant criado com sucesso. Um email de boas-vindas/redefinição de senha foi enviado ao Admin.");
             await fetchCartorios();
         } catch (err: any) {
             console.error("Error creating tenant:", err);
@@ -96,7 +99,7 @@ const MasterDashboard = () => {
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">Master Dashboard (Super Admin)</h2>
                 <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={() => { setIsModalOpen(true); setError(null); setSuccessMessage(null); }}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium"
                 >
                     Criar Cartório
@@ -108,6 +111,12 @@ const MasterDashboard = () => {
                     Painel exclusivo para controle central e gestão de tenants (Cartórios).
                 </p>
             </div>
+
+            {successMessage && (
+                <div className="mb-4 p-4 text-sm text-green-700 bg-green-100 rounded-lg" role="alert">
+                    {successMessage}
+                </div>
+            )}
 
             <h3 className="text-lg font-semibold mb-3 text-gray-700">Tenants Ativos</h3>
 
