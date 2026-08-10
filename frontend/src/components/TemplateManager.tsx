@@ -27,14 +27,19 @@ const TemplateManager: React.FC = () => {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   const fetchTemplates = async () => {
-    if (isAuthLoading || !cartorioId || userRole === 'super_admin') return;
+    if (isAuthLoading || (!cartorioId && userRole !== 'super_admin')) return;
     setIsLoading(true);
     setError(null);
     try {
-      const q = query(
-        collection(db, 'templates'),
-        where('cartorio_id', '==', cartorioId)
-      );
+      let q;
+      if (userRole === 'super_admin') {
+        q = query(collection(db, 'templates'));
+      } else {
+        q = query(
+          collection(db, 'templates'),
+          where('cartorio_id', '==', cartorioId)
+        );
+      }
       const querySnapshot = await getDocs(q);
       const fetchedTemplates: Template[] = [];
       querySnapshot.forEach((doc) => {

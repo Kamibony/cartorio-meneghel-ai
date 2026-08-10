@@ -38,13 +38,16 @@ service cloud.firestore {
     // Users Collection
     match /users/{userId} {
       // Users can read their own data.
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) ||
+                     hasRole('super_admin') ||
+                     (hasRole('cartorio_admin') && belongsToCartorio(resource.data.cartorio_id));
       // Only admins or backend can write (for this simplified example, users can't modify their own roles/cartorio).
       allow write: if false;
     }
 
     // Cartorios Collection (Multi-tenant Root)
     match /cartorios/{cartorioId} {
+      allow read: if hasRole('super_admin') || belongsToCartorio(cartorioId);
 
       // Minutas Collection (deprecated, moved to root but kept here for backward compatibility)
       match /minutas/{minutaId} {
@@ -79,7 +82,7 @@ service cloud.firestore {
 
     // Global Templates Collection
     match /templates/{templateId} {
-      allow read: if hasRole('super_admin') || belongsToCartorio(resource.data.cartorio_id);
+      allow read: if hasRole('super_admin') || (resource != null && belongsToCartorio(resource.data.cartorio_id));
       allow write: if hasRole('super_admin') || (
         (resource == null || belongsToCartorio(resource.data.cartorio_id)) &&
         (request.resource == null || belongsToCartorio(request.resource.data.cartorio_id)) &&

@@ -15,10 +15,15 @@ const TeamManagement: React.FC = () => {
   const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null);
 
   const loadUsers = async () => {
-    if (!cartorioId) return;
+    if (!cartorioId && userRole !== 'super_admin') return;
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'users'), where('cartorio_id', '==', cartorioId));
+      let q;
+      if (userRole === 'super_admin') {
+        q = query(collection(db, 'users'));
+      } else {
+        q = query(collection(db, 'users'), where('cartorio_id', '==', cartorioId));
+      }
       const querySnapshot = await getDocs(q);
       const fetchedUsers: User[] = [];
       querySnapshot.forEach((doc) => {
@@ -100,7 +105,7 @@ const TeamManagement: React.FC = () => {
     }
   };
 
-  if (userRole !== 'cartorio_admin') {
+  if (userRole !== 'cartorio_admin' && userRole !== 'super_admin') {
     return (
       <div className="flex items-center justify-center h-full bg-gray-50">
         <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-red-200">
