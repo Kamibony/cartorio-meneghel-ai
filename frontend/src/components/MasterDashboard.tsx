@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import TeamManagement from './TeamManagement';
+import TemplateManager from './TemplateManager';
 
 const MasterDashboard = () => {
     const [cartorios, setCartorios] = useState<any[]>([]);
@@ -12,6 +14,9 @@ const MasterDashboard = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+    const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
+    const [viewingGlobalTemplates, setViewingGlobalTemplates] = useState(false);
 
     const fetchCartorios = async () => {
         setLoading(true);
@@ -94,16 +99,61 @@ const MasterDashboard = () => {
         }
     };
 
+    if (viewingGlobalTemplates) {
+        return (
+            <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 h-full relative flex flex-col">
+                <div className="mb-4">
+                    <button onClick={() => setViewingGlobalTemplates(false)} className="text-blue-600 hover:underline mb-2 inline-block">
+                        &larr; Voltar ao Dashboard
+                    </button>
+                    <h2 className="text-xl font-semibold text-gray-800">Gerenciar Templates Globais (SYSTEM)</h2>
+                </div>
+                <div className="flex-1 overflow-auto">
+                    <TemplateManager injectedCartorioId="SYSTEM" />
+                </div>
+            </div>
+        );
+    }
+
+    if (selectedTenant) {
+        return (
+            <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 h-full relative flex flex-col">
+                <div className="mb-4">
+                    <button onClick={() => setSelectedTenant(null)} className="text-blue-600 hover:underline mb-2 inline-block">
+                        &larr; Voltar ao Dashboard
+                    </button>
+                    <h2 className="text-xl font-semibold text-gray-800">Gerenciando Tenant: {selectedTenant}</h2>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-hidden">
+                    <div className="h-full overflow-auto bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <TeamManagement injectedCartorioId={selectedTenant} />
+                    </div>
+                    <div className="h-full overflow-auto bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <TemplateManager injectedCartorioId={selectedTenant} />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 h-full relative">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">Master Dashboard (Super Admin)</h2>
-                <button
-                    onClick={() => { setIsModalOpen(true); setError(null); setSuccessMessage(null); }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium"
-                >
-                    Criar Cartório
-                </button>
+                <div className="space-x-3">
+                    <button
+                        onClick={() => setViewingGlobalTemplates(true)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium"
+                    >
+                        Templates Globais
+                    </button>
+                    <button
+                        onClick={() => { setIsModalOpen(true); setError(null); setSuccessMessage(null); }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium"
+                    >
+                        Criar Cartório
+                    </button>
+                </div>
             </div>
 
             <div className="mb-6">
@@ -188,6 +238,7 @@ const MasterDashboard = () => {
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID do Cartório</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -196,6 +247,14 @@ const MasterDashboard = () => {
                                     <tr key={cartorio.id}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{cartorio.id}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{cartorio.status || 'Ativo'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <button
+                                                onClick={() => setSelectedTenant(cartorio.id)}
+                                                className="text-blue-600 hover:text-blue-900"
+                                            >
+                                                Gerenciar
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))
                             ) : (

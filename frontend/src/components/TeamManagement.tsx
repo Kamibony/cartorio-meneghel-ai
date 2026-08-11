@@ -5,8 +5,13 @@ import { useAuth } from '../contexts/AuthContext';
 import type { User, UserRole } from '../types/firestore';
 import { ENV } from '../config/env';
 
-const TeamManagement: React.FC = () => {
-  const { cartorioId, userRole } = useAuth();
+interface TeamManagementProps {
+  injectedCartorioId?: string;
+}
+
+const TeamManagement: React.FC<TeamManagementProps> = ({ injectedCartorioId }) => {
+  const { cartorioId: authCartorioId, userRole } = useAuth();
+  const cartorioId = injectedCartorioId || authCartorioId;
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -69,6 +74,31 @@ const TeamManagement: React.FC = () => {
     }
   };
 
+  const handleReactivate = async (uid: string) => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const apiUrl = ENV.apiUrl;
+      const response = await fetch(`${apiUrl}/reactivateEmployeeAccess`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ uid })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Erro ao reativar acesso');
+      }
+
+      setMessage({ text: 'Acesso reativado com sucesso.', type: 'success' });
+      loadUsers();
+    } catch (error: any) {
+      setMessage({ text: error.message, type: 'error' });
+    }
+  };
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail) return;
@@ -80,13 +110,18 @@ const TeamManagement: React.FC = () => {
 
       const apiUrl = ENV.apiUrl;
 
+      const payload: any = { email: inviteEmail, role: inviteRole };
+      if (injectedCartorioId) {
+          payload.cartorio_id = injectedCartorioId;
+      }
+
       const response = await fetch(`${apiUrl}/inviteEmployee`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole })
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
@@ -186,12 +221,14 @@ const TeamManagement: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        (user.role === 'super_admin' || user.role === 'Super Admin' as any) ? 'bg-blue-100 text-blue-800' :
-                        (user.role === 'cartorio_admin' || user.role === 'Admin' as any) ? 'bg-purple-100 text-purple-800' :
-                        'bg-green-100 text-green-800'
+                        user.role === 'super_admin' ? 'bg-blue-100 text-blue-800' :
+                        user.role === 'cartorio_admin' ? 'bg-purple-100 text-purple-800' :
+                        user.role === 'escrevente' ? 'bg-green-100 text-green-800' :
+                        'bg-red-100 text-red-800'
                       }`}>
-                        {(user.role === 'super_admin' || user.role === 'Super Admin' as any) ? 'Super Admin' :
-                         (user.role === 'cartorio_admin' || user.role === 'Admin' as any) ? 'Admin' : 'Escrevente'}
+                        {user.role === 'super_admin' ? 'Super Admin' :
+                         user.role === 'cartorio_admin' ? 'Admin' :
+                         user.role === 'escrevente' ? 'Escrevente' : 'Unknown'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -208,6 +245,14 @@ const TeamManagement: React.FC = () => {
                                 className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"
                             >
                                 Revogar
+                            </button>
+                        )}
+                        {(user as any).status === 'revoked' && (userRole === 'super_admin' || user.role !== 'cartorio_admin') && (
+                            <button
+                                onClick={() => handleReactivate(user.uid)}
+                                className="text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 px-3 py-1 rounded-md transition-colors"
+                            >
+                                Reativar
                             </button>
                         )}
                     </td>

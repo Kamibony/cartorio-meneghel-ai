@@ -214,7 +214,7 @@ def submit_audit_event(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-from admin import inviteEmployee, revokeEmployeeAccess
+from admin import inviteEmployee, revokeEmployeeAccess, reactivateEmployeeAccess
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def finalize_validation(req: https_fn.Request) -> https_fn.Response:
@@ -861,13 +861,18 @@ def generate_document(req: https_fn.CallableRequest) -> dict:
         import uuid
         bucket = storage.bucket()
 
-        template_ref = db.collection("cartorios").document(cartorio_id).collection("templates").document(template_id)
+        template_ref = db.collection("templates").document(template_id)
         template_doc = template_ref.get()
 
         if not template_doc.exists:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template not found")
 
         template_info = template_doc.to_dict()
+
+        template_cartorio_id = template_info.get("cartorio_id")
+        if template_cartorio_id not in [cartorio_id, "SYSTEM"]:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized to access this template")
+
         gcs_path = template_info.get("gcs_path")
         required_tags = template_info.get("required_tags", [])
 

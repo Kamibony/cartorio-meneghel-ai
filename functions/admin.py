@@ -60,8 +60,11 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             return https_fn.Response(json.dumps({"error": "Invalid role requested"}), status=400)
 
         target_cartorio_id = caller_cartorio
-        if caller_role == "super_admin" and data.get("cartorio_id"):
-            target_cartorio_id = data.get("cartorio_id")
+        if caller_role == "super_admin":
+            if data.get("cartorio_id"):
+                target_cartorio_id = data.get("cartorio_id")
+            else:
+                return https_fn.Response(json.dumps({"error": "Missing cartorio_id in payload for super_admin"}), status=400)
 
         # Create user in Firebase Auth
         try:
@@ -70,6 +73,19 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
                 email_verified=False
             )
         except auth.EmailAlreadyExistsError:
+            try:
+                existing_user = auth.get_user_by_email(email)
+                existing_doc = db.collection("users").document(existing_user.uid).get()
+                if existing_doc.exists:
+                    existing_data = existing_doc.to_dict()
+                    if existing_data.get("cartorio_id") == target_cartorio_id and existing_data.get("status") == "revoked":
+                        return https_fn.Response(
+                            json.dumps({"error": "Este usuário já existe e está revogado. Por favor, use a opção 'Reativar' na interface."}),
+                            status=400,
+                            content_type="application/json"
+                        )
+            except Exception as e:
+                logger.error(f"Error checking existing user for reactivate: {e}")
             raise https_fn.HttpsError(
                 code=https_fn.FunctionsErrorCode.ALREADY_EXISTS,
                 message="Email já cadastrado."
@@ -107,6 +123,86 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
         return https_fn.Response(json.dumps({"error": e.message}), status=400)
     except Exception as e:
         logger.error(f"Error in inviteEmployee: {e}", exc_info=True)
+        return https_fn.Response(json.dumps({"error": str(e)}), status=500)
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def reactivateEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
+    """
+    Reactivates access for a revoked employee.
+    """
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": "Only POST requests are accepted"}),
+            status=405,
+            content_type="application/json"
+        )
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(
+            json.dumps({"error": "Unauthorized"}),
+            status=401,
+            content_type="application/json"
+        )
+
+    token = auth_header.split("Bearer ")[1]
+    _init_firebase()
+
+    try:
+        decoded_token = auth.verify_id_token(token)
+        caller_uid = decoded_token.get("uid")
+
+        db = firestore.client()
+        caller_doc = db.collection("users").document(caller_uid).get()
+        if not caller_doc.exists:
+            return https_fn.Response(json.dumps({"error": "Caller user not found in database"}), status=403)
+
+        caller_data = caller_doc.to_dict()
+
+        caller_role = decoded_token.get("role") or caller_data.get("role")
+        caller_cartorio = decoded_token.get("cartorio_id") or caller_data.get("cartorio_id")
+
+        if caller_role not in ["super_admin", "cartorio_admin"]:
+            return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)
+
+        data = req.get_json(silent=True)
+        if not data:
+            return https_fn.Response(json.dumps({"error": "Missing or invalid JSON payload"}), status=400)
+
+        target_uid = data.get("uid")
+        if not target_uid:
+            return https_fn.Response(json.dumps({"error": "Missing uid in payload"}), status=400)
+
+        target_doc = db.collection("users").document(target_uid).get()
+        if not target_doc.exists:
+            return https_fn.Response(json.dumps({"error": "Target user not found"}), status=404)
+
+        target_data = target_doc.to_dict()
+        if target_data.get("cartorio_id") != caller_cartorio and caller_role != "super_admin":
+            return https_fn.Response(json.dumps({"error": "Forbidden: Cannot reactivate access for user in different cartorio"}), status=403)
+
+        if target_data.get("status") != "revoked":
+            return https_fn.Response(json.dumps({"error": "User is not revoked"}), status=400)
+
+        # Reactivate access in Firebase Auth
+        auth.update_user(target_uid, disabled=False)
+
+        # Update status in Firestore
+        db.collection("users").document(target_uid).update({
+            "status": "active",
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        })
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "message": "Access reactivated successfully"}),
+            status=200,
+            content_type="application/json"
+        )
+
+    except https_fn.HttpsError as e:
+        return https_fn.Response(json.dumps({"error": e.message}), status=400)
+    except Exception as e:
+        logger.error(f"Error in reactivateEmployeeAccess: {e}", exc_info=True)
         return https_fn.Response(json.dumps({"error": str(e)}), status=500)
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)

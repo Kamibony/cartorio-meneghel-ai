@@ -187,7 +187,7 @@ function Dashboard() {
               </>
             )}
 
-            {(userRole === 'cartorio_admin' || userRole === 'super_admin') && (
+            {userRole === 'cartorio_admin' && (
               <>
                 <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-8 px-3">
                   Admin
