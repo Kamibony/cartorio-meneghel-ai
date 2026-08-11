@@ -15,8 +15,13 @@ interface Template {
   is_active: boolean;
 }
 
-const TemplateManager: React.FC = () => {
-  const { cartorioId, userRole, isLoading: isAuthLoading } = useAuth();
+interface TemplateManagerProps {
+  injectedCartorioId?: string;
+}
+
+const TemplateManager: React.FC<TemplateManagerProps> = ({ injectedCartorioId }) => {
+  const { cartorioId: authCartorioId, userRole, isLoading: isAuthLoading } = useAuth();
+  const cartorioId = injectedCartorioId || authCartorioId;
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +37,7 @@ const TemplateManager: React.FC = () => {
     setError(null);
     try {
       let q;
-      if (userRole === 'super_admin') {
+      if (userRole === 'super_admin' && !injectedCartorioId) {
         q = query(collection(db, 'templates'));
       } else {
         q = query(
@@ -85,7 +90,12 @@ const TemplateManager: React.FC = () => {
       // Wait, there is no direct file upload endpoint, but we can use Firebase Storage SDK directly.
       const { getStorage, ref, uploadBytes } = await import('firebase/storage');
       const storage = getStorage();
-      const storagePath = `cartorios/${cartorioId}/templates/${file.name}`;
+      const uploadCartorioId = (userRole === 'super_admin' && !injectedCartorioId) ? 'SYSTEM' : cartorioId;
+
+      const storagePath = uploadCartorioId === 'SYSTEM'
+          ? `system/templates/${file.name}`
+          : `cartorios/${uploadCartorioId}/templates/${file.name}`;
+
       const storageRef = ref(storage, storagePath);
 
       await uploadBytes(storageRef, file);
@@ -94,8 +104,6 @@ const TemplateManager: React.FC = () => {
       const user = auth.currentUser;
       if (!user) throw new Error("Usuário não autenticado");
       const token = await user.getIdToken();
-
-      const uploadCartorioId = userRole === 'super_admin' ? 'SYSTEM' : cartorioId;
 
       const response = await fetch(`${ENV.apiUrl}/register_template`, {
         method: 'POST',
@@ -133,7 +141,7 @@ const TemplateManager: React.FC = () => {
   };
 
   const handleToggleActive = async (templateId: string, currentStatus: boolean) => {
-    if (!cartorioId) return;
+    if (!cartorioId && userRole !== 'super_admin') return;
     try {
       const templateRef = doc(db, 'templates', templateId);
       await updateDoc(templateRef, { is_active: !currentStatus });

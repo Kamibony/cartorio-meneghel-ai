@@ -14,6 +14,13 @@ service firebase.storage {
       return isAuthenticated() && ('cartorio_id' in request.auth.token) && request.auth.token.cartorio_id == cartorioId;
     }
 
+    match /system/templates/{templateId} {
+      // Any authenticated user can read global templates
+      allow read: if isAuthenticated();
+      // Only super_admin can write/upload global templates
+      allow write: if hasRole('super_admin');
+    }
+
     match /cartorios/{cartorioId} {
       match /templates/{templateId} {
         // Any user in the cartorio can read templates for generation
