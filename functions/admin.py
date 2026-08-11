@@ -49,7 +49,7 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
         if caller_role not in ["super_admin", "cartorio_admin"]:
             return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)
 
-        data = req.get_json()
+        data = req.get_json(silent=True)
         if not data or not data.get("email"):
             return https_fn.Response(json.dumps({"error": "Missing email in payload"}), status=400)
 
@@ -150,7 +150,10 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
         if caller_role not in ["super_admin", "cartorio_admin"]:
             return https_fn.Response(json.dumps({"error": "Forbidden: Requires cartorio_admin privileges"}), status=403)
 
-        data = req.get_json()
+        data = req.get_json(silent=True)
+        if not data:
+            return https_fn.Response(json.dumps({"error": "Missing or invalid JSON payload"}), status=400)
+
         target_uid = data.get("uid")
 
         if not target_uid:
