@@ -1,0 +1,18 @@
+<<<<<<< SEARCH
+        target_uid = data.get("uid")
+
+        if not target_uid:
+            return https_fn.Response(json.dumps({"error": "Missing uid in payload"}), status=400)
+
+        # Verify target user belongs to same cartorio
+=======
+        target_uid = data.get("uid")
+
+        if not target_uid:
+            return https_fn.Response(json.dumps({"error": "Missing uid in payload"}), status=400)
+
+        if target_uid == caller_uid:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Cannot revoke your own access.")
+
+        # Verify target user belongs to same cartorio
+>>>>>>> REPLACE

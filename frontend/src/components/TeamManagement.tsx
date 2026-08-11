@@ -186,12 +186,12 @@ const TeamManagement: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        user.role === 'super_admin' ? 'bg-blue-100 text-blue-800' :
-                        user.role === 'cartorio_admin' ? 'bg-purple-100 text-purple-800' :
+                        (user.role === 'super_admin' || user.role === 'Super Admin' as any) ? 'bg-blue-100 text-blue-800' :
+                        (user.role === 'cartorio_admin' || user.role === 'Admin' as any) ? 'bg-purple-100 text-purple-800' :
                         'bg-green-100 text-green-800'
                       }`}>
-                        {user.role === 'super_admin' ? 'Super Admin' :
-                         user.role === 'cartorio_admin' ? 'Admin' : 'Escrevente'}
+                        {(user.role === 'super_admin' || user.role === 'Super Admin' as any) ? 'Super Admin' :
+                         (user.role === 'cartorio_admin' || user.role === 'Admin' as any) ? 'Admin' : 'Escrevente'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
