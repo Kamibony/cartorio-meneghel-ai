@@ -84,7 +84,7 @@ service cloud.firestore {
 
     // Global Templates Collection
     match /templates/{templateId} {
-      allow read: if hasRole('super_admin') || (resource != null && belongsToCartorio(resource.data.cartorio_id));
+      allow read: if hasRole('super_admin') || (resource != null && (resource.data.cartorio_id == 'SYSTEM' || belongsToCartorio(resource.data.cartorio_id)));
       allow write: if hasRole('super_admin') || (
         (resource == null || belongsToCartorio(resource.data.cartorio_id)) &&
         (request.resource == null || belongsToCartorio(request.resource.data.cartorio_id)) &&

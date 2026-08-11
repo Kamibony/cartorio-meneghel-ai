@@ -1,0 +1,14 @@
+<<<<<<< SEARCH
+        # Revoke access in Firebase Auth
+        auth.update_user(target_uid, disabled=True)
+
+        # Update status in Firestore
+        db.collection("users").document(target_uid).update({
+=======
+        # Revoke access in Firebase Auth
+        auth.update_user(target_uid, disabled=True)
+        auth.revoke_refresh_tokens(target_uid)
+
+        # Update status in Firestore
+        db.collection("users").document(target_uid).update({
+>>>>>>> REPLACE

@@ -159,6 +159,9 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
         if not target_uid:
             return https_fn.Response(json.dumps({"error": "Missing uid in payload"}), status=400)
 
+        if target_uid == caller_uid:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Cannot revoke your own access.")
+
         # Verify target user belongs to same cartorio
         target_doc = db.collection("users").document(target_uid).get()
         if not target_doc.exists:
@@ -173,6 +176,7 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
 
         # Revoke access in Firebase Auth
         auth.update_user(target_uid, disabled=True)
+        auth.revoke_refresh_tokens(target_uid)
 
         # Update status in Firestore
         db.collection("users").document(target_uid).update({
@@ -186,6 +190,8 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
+    except https_fn.HttpsError as e:
+        return https_fn.Response(json.dumps({"error": e.message}), status=400)
     except Exception as e:
         logger.error(f"Error in revokeEmployeeAccess: {e}", exc_info=True)
         return https_fn.Response(json.dumps({"error": str(e)}), status=500)
