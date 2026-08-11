@@ -185,8 +185,13 @@ const TeamManagement: React.FC = () => {
                   <tr key={user.uid}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.role === 'cartorio_admin' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}`}>
-                        {user.role === 'cartorio_admin' ? 'Admin' : 'Escrevente'}
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        user.role === 'super_admin' ? 'bg-blue-100 text-blue-800' :
+                        user.role === 'cartorio_admin' ? 'bg-purple-100 text-purple-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        {user.role === 'super_admin' ? 'Super Admin' :
+                         user.role === 'cartorio_admin' ? 'Admin' : 'Escrevente'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -197,7 +202,7 @@ const TeamManagement: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {(user as any).status === 'active' && user.role !== 'cartorio_admin' && (
+                        {(user as any).status === 'active' && (userRole === 'super_admin' || user.role !== 'cartorio_admin') && (
                             <button
                                 onClick={() => handleRevoke(user.uid)}
                                 className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"

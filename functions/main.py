@@ -640,13 +640,22 @@ def register_template(req: https_fn.CallableRequest) -> dict:
 
         user_data = user_doc.to_dict()
         data = req.data
-        cartorio_id = data.get("cartorio_id")
-
-        if not cartorio_id or user_data.get('cartorio_id') != cartorio_id or user_data.get('role') not in ['cartorio_admin', 'super_admin']:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
 
         if not data:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
+
+        cartorio_id = data.get("cartorio_id")
+        user_role = user_data.get('role')
+        user_cartorio_id = user_data.get('cartorio_id')
+
+        if not cartorio_id:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
+        if user_role not in ['cartorio_admin', 'super_admin']:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
+        if user_role != 'super_admin' and user_cartorio_id != cartorio_id:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
 
         cartorio_id = data.get("cartorio_id")
         gcs_path = data.get("gcs_path")
@@ -671,7 +680,7 @@ def register_template(req: https_fn.CallableRequest) -> dict:
         except ValueError as ve:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
 
-        doc_ref = db.collection("cartorios").document(cartorio_id).collection("templates").document()
+        doc_ref = db.collection("templates").document()
 
         template_data = {
             "id": doc_ref.id,

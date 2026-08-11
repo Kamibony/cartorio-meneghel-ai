@@ -37,7 +37,7 @@ const TemplateManager: React.FC = () => {
       } else {
         q = query(
           collection(db, 'templates'),
-          where('cartorio_id', '==', cartorioId)
+          where('cartorio_id', 'in', [cartorioId, 'SYSTEM'])
         );
       }
       const querySnapshot = await getDocs(q);
@@ -95,6 +95,8 @@ const TemplateManager: React.FC = () => {
       if (!user) throw new Error("Usuário não autenticado");
       const token = await user.getIdToken();
 
+      const uploadCartorioId = userRole === 'super_admin' ? 'SYSTEM' : cartorioId;
+
       const response = await fetch(`${ENV.apiUrl}/register_template`, {
         method: 'POST',
         headers: {
@@ -103,7 +105,7 @@ const TemplateManager: React.FC = () => {
         },
         body: JSON.stringify({
           data: {
-             cartorio_id: cartorioId,
+             cartorio_id: uploadCartorioId,
              gcs_path: storagePath,
              name: uploadName,
              document_type: uploadType,
