@@ -56,6 +56,14 @@
         "function": "finalize_validation"
       },
       {
+        "source": "/api/register_template",
+        "function": "register_template"
+      },
+      {
+        "source": "/api/reactivateEmployeeAccess",
+        "function": "reactivateEmployeeAccess"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

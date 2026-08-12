@@ -624,44 +624,91 @@ def log_hitl_resolution(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
-@https_fn.on_call(memory=options.MemoryOption.MB_256)
-def register_template(req: https_fn.CallableRequest) -> dict:
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def register_template(req: https_fn.Request) -> https_fn.Response:
     """
     Registers a new .docx template.
-    Accepts Callable payload: {"cartorio_id": "...", "gcs_path": "...", "name": "...", "document_type": "...", "created_by": "..."}
+    Accepts Callable payload: {"data": {"cartorio_id": "...", "gcs_path": "...", "name": "...", "document_type": "...", "created_by": "..."}}
     Downloads the template from GCS, extracts Jinja2 tags, and creates a record in Firestore.
     """
-    if not req.auth:
-        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.UNAUTHENTICATED, message="Unauthenticated")
+    if req.method != "POST":
+        return https_fn.Response(
+            json.dumps({"error": {"message": "Only POST requests are accepted", "status": "METHOD_NOT_ALLOWED"}}),
+            status=405,
+            content_type="application/json"
+        )
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(
+            json.dumps({"error": {"message": "Unauthenticated", "status": "UNAUTHENTICATED"}}),
+            status=401,
+            content_type="application/json"
+        )
+
+    token = auth_header.split("Bearer ")[1]
 
     try:
         from core.firebase_utils import _init_firebase
         _init_firebase()
-        from firebase_admin import firestore, storage
+        from firebase_admin import auth, firestore, storage
+
+        try:
+            decoded_token = auth.verify_id_token(token)
+            uid = decoded_token.get("uid")
+        except Exception as e:
+            return https_fn.Response(
+                json.dumps({"error": {"message": f"Invalid token: {str(e)}", "status": "UNAUTHENTICATED"}}),
+                status=401,
+                content_type="application/json"
+            )
+
         db = firestore.client()
 
-        user_doc = db.collection('users').document(req.auth.uid).get()
+        user_doc = db.collection('users').document(uid).get()
         if not user_doc.exists:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="User not found")
+            return https_fn.Response(
+                json.dumps({"error": {"message": "User not found", "status": "PERMISSION_DENIED"}}),
+                status=403,
+                content_type="application/json"
+            )
 
         user_data = user_doc.to_dict()
-        data = req.data
 
-        if not data:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
+        payload = req.get_json(silent=True)
+        if not payload:
+            return https_fn.Response(
+                json.dumps({"error": {"message": "Missing JSON payload", "status": "INVALID_ARGUMENT"}}),
+                status=400,
+                content_type="application/json"
+            )
+
+        data = payload.get("data", {})
 
         cartorio_id = data.get("cartorio_id")
         user_role = user_data.get('role')
         user_cartorio_id = user_data.get('cartorio_id')
 
         if not cartorio_id:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+            return https_fn.Response(
+                json.dumps({"error": {"message": "Unauthorized: Missing cartorio_id", "status": "PERMISSION_DENIED"}}),
+                status=403,
+                content_type="application/json"
+            )
 
         if user_role not in ['cartorio_admin', 'super_admin']:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+            return https_fn.Response(
+                json.dumps({"error": {"message": "Unauthorized: Role not permitted", "status": "PERMISSION_DENIED"}}),
+                status=403,
+                content_type="application/json"
+            )
 
         if user_role != 'super_admin' and user_cartorio_id != cartorio_id:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+            return https_fn.Response(
+                json.dumps({"error": {"message": "Unauthorized: Cartorio mismatch", "status": "PERMISSION_DENIED"}}),
+                status=403,
+                content_type="application/json"
+            )
 
         cartorio_id = data.get("cartorio_id")
         gcs_path = data.get("gcs_path")
@@ -670,13 +717,21 @@ def register_template(req: https_fn.CallableRequest) -> dict:
         created_by = data.get("created_by")
 
         if not all([cartorio_id, gcs_path, name, document_type, created_by]):
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
+            return https_fn.Response(
+                json.dumps({"error": {"message": "Missing required fields", "status": "INVALID_ARGUMENT"}}),
+                status=400,
+                content_type="application/json"
+            )
 
         bucket = storage.bucket()
 
         blob = bucket.blob(gcs_path)
         if not blob.exists():
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message=f"File not found at {gcs_path}")
+            return https_fn.Response(
+                json.dumps({"error": {"message": f"File not found at {gcs_path}", "status": "NOT_FOUND"}}),
+                status=404,
+                content_type="application/json"
+            )
 
         template_bytes = blob.download_as_bytes()
 
@@ -684,7 +739,11 @@ def register_template(req: https_fn.CallableRequest) -> dict:
         try:
             required_tags = extract_tags_from_template(template_bytes)
         except ValueError as ve:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
+            return https_fn.Response(
+                json.dumps({"error": {"message": str(ve), "status": "INVALID_ARGUMENT"}}),
+                status=400,
+                content_type="application/json"
+            )
 
         doc_ref = db.collection("templates").document()
 
@@ -704,13 +763,19 @@ def register_template(req: https_fn.CallableRequest) -> dict:
 
         template_data["created_at"] = "SERVER_TIMESTAMP"
 
-        return {"status": "success", "template": template_data}
+        return https_fn.Response(
+            json.dumps({"data": {"status": "success", "template": template_data}}),
+            status=200,
+            content_type="application/json"
+        )
 
-    except https_fn.HttpsError as he:
-        raise he
     except Exception as e:
         logger.error("Error in register_template", exc_info=True)
-        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
+        return https_fn.Response(
+            json.dumps({"error": {"message": f"Internal server error: {str(e)}", "status": "INTERNAL"}}),
+            status=500,
+            content_type="application/json"
+        )
 
 @https_fn.on_call(memory=options.MemoryOption.MB_256)
 def grantSupportAccess(req: https_fn.CallableRequest) -> dict:
