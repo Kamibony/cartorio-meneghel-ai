@@ -1,0 +1,15 @@
+{
+  "test_contract": {
+    "verified_data": {
+      "nome_comprador": "João da Silva",
+      "valor_imovel": "R$ 500.000,00",
+      "nome_vendedor": "Maria Souza"
+    },
+    "required_tags": [
+      "nome_comprador",
+      "valor_imovel",
+      "nome_vendedor"
+    ],
+    "expected_text": "Comprador: João da Silva\nValor: R$ 500.000,00\nVendedor: Maria Souza"
+  }
+}

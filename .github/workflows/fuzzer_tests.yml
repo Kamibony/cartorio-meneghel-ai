@@ -22,7 +22,7 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install -r requirements.txt Faker deepdiff pytest
+          pip install -r requirements.txt Faker deepdiff pytest python-docx
 
       - name: Run Fuzzer Tests
         working-directory: ./functions
@@ -32,3 +32,4 @@ jobs:
         run: |
           source venv/bin/activate
           pytest tests/fuzzer.py -v -s
+          pytest tests/test_generator_fuzzer.py -v -s
