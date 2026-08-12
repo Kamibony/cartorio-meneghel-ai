@@ -161,7 +161,7 @@ function Dashboard() {
               </>
             )}
 
-            {userRole !== 'super_admin' && (
+            {(userRole === 'escrevente' || userRole === 'cartorio_admin') && (
               <>
                 <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
                   Workspace

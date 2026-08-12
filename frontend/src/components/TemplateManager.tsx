@@ -39,11 +39,21 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({ injectedCartorioId })
       let q;
       if (userRole === 'super_admin' && !injectedCartorioId) {
         q = query(collection(db, 'templates'));
-      } else {
+      } else if (injectedCartorioId === 'SYSTEM') {
+        q = query(
+          collection(db, 'templates'),
+          where('cartorio_id', '==', 'SYSTEM')
+        );
+      } else if (cartorioId) {
         q = query(
           collection(db, 'templates'),
           where('cartorio_id', 'in', [cartorioId, 'SYSTEM'])
         );
+      } else {
+        // If no cartorioId is found, return empty query or skip
+        setTemplates([]);
+        setIsLoading(false);
+        return;
       }
       const querySnapshot = await getDocs(q);
       const fetchedTemplates: Template[] = [];
