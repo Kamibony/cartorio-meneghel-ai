@@ -32,60 +32,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // Force token refresh on load to ensure custom claims are fresh (for Admin UI access)
           await user.getIdToken(true);
           const tokenResult = await user.getIdTokenResult();
-          let tokenRole = tokenResult.claims.role as UserRole | undefined;
-          let tokenCartorioId = tokenResult.claims.cartorio_id as string | undefined;
-          let isRefreshingToken = false;
+          const tokenRole = tokenResult.claims.role as UserRole | undefined;
+          const tokenCartorioId = tokenResult.claims.cartorio_id as string | undefined;
 
-          // Set up real-time listener for the user document to act as an immediate kill switch
+          // Set claims directly from token for the UI
+          setCartorioId(tokenCartorioId || null);
+          setUserRole(tokenRole || null);
+
+          // Set up real-time listener for the user document strictly to act as an immediate kill switch
           snapshotUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (userDoc) => {
               if (userDoc.exists()) {
                   const data = userDoc.data() as FirestoreUser;
 
                   // Immediate kill switch if status is revoked
-                  if ((data as any).status === 'revoked') {
+                  if (data.status === 'revoked') {
                       console.warn("User access revoked. Signing out immediately.");
                       signOut(auth);
                       return;
                   }
-
-                  // Force token refresh if role in Firestore doesn't match current token claims
-                  if (data.role && data.role !== tokenRole) {
-                      if (!isRefreshingToken) {
-                          isRefreshingToken = true;
-                          console.warn("Role mismatch detected. Forcing token refresh.");
-                          user.getIdToken(true).then(async () => {
-                              const newTokenResult = await user.getIdTokenResult();
-                              tokenRole = newTokenResult.claims.role as UserRole | undefined;
-                              tokenCartorioId = newTokenResult.claims.cartorio_id as string | undefined;
-
-                              setCartorioId(tokenCartorioId || data.cartorio_id || null);
-                              setUserRole(tokenRole || data.role || null);
-                              isRefreshingToken = false;
-                          }).catch(e => {
-                              console.error("Failed to force refresh token", e);
-                              setUserRole(data.role || null);
-                              setCartorioId(data.cartorio_id || null);
-                              isRefreshingToken = false;
-                          });
-                      } else {
-                          // Already refreshing, just use local data temporarily
-                          setUserRole(data.role || null);
-                          setCartorioId(data.cartorio_id || null);
-                      }
-                  } else {
-                      setCartorioId(tokenCartorioId || data.cartorio_id || null);
-                      setUserRole(tokenRole || data.role || null);
-                  }
-              } else {
-                  setCartorioId(tokenCartorioId || null);
-                  setUserRole(tokenRole || null);
               }
               setIsLoading(false);
           }, (error) => {
               console.error("User snapshot listener error:", error);
-              // Fallback to token claims if Firestore listener fails (e.g. permission denied)
-              setCartorioId(tokenCartorioId || null);
-              setUserRole(tokenRole || null);
               setIsLoading(false);
           });
         } catch (e) {
