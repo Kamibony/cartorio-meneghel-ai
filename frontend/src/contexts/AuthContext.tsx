@@ -50,7 +50,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   // Force token refresh if role in Firestore doesn't match current token claims
                   if (data.role && tokenRole && data.role !== tokenRole) {
                       console.warn("Role mismatch detected. Forcing token refresh.");
-                      user.getIdToken(true).then((newToken) => {
+                      user.getIdToken(true).then(() => {
                           // we could parse new token, or just let the next reload get it,
                           // but the assignment below might be stale. However, re-fetching token
                           // usually means we just update the token for next requests.
