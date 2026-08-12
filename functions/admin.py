@@ -32,8 +32,11 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
     _init_firebase()
 
     try:
-        decoded_token = auth.verify_id_token(token)
-        caller_uid = decoded_token.get("uid")
+        try:
+            decoded_token = auth.verify_id_token(token)
+            caller_uid = decoded_token.get("uid")
+        except Exception as e:
+            return https_fn.Response(json.dumps({"error": f"Invalid token: {str(e)}"}), status=401, content_type="application/json")
 
         db = firestore.client()
         caller_doc = db.collection("users").document(caller_uid).get()
@@ -149,8 +152,11 @@ def reactivateEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
     _init_firebase()
 
     try:
-        decoded_token = auth.verify_id_token(token)
-        caller_uid = decoded_token.get("uid")
+        try:
+            decoded_token = auth.verify_id_token(token)
+            caller_uid = decoded_token.get("uid")
+        except Exception as e:
+            return https_fn.Response(json.dumps({"error": f"Invalid token: {str(e)}"}), status=401, content_type="application/json")
 
         db = firestore.client()
         caller_doc = db.collection("users").document(caller_uid).get()
@@ -243,8 +249,11 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
     _init_firebase()
 
     try:
-        decoded_token = auth.verify_id_token(token)
-        caller_uid = decoded_token.get("uid")
+        try:
+            decoded_token = auth.verify_id_token(token)
+            caller_uid = decoded_token.get("uid")
+        except Exception as e:
+            return https_fn.Response(json.dumps({"error": f"Invalid token: {str(e)}"}), status=401, content_type="application/json")
 
         db = firestore.client()
         caller_doc = db.collection("users").document(caller_uid).get()
