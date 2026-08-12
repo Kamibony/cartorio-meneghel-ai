@@ -86,8 +86,8 @@ service cloud.firestore {
     match /templates/{templateId} {
       allow read: if hasRole('super_admin') || (resource != null && (resource.data.cartorio_id == 'SYSTEM' || belongsToCartorio(resource.data.cartorio_id)));
       allow write: if hasRole('super_admin') || (
-        (resource == null || belongsToCartorio(resource.data.cartorio_id)) &&
-        (request.resource == null || belongsToCartorio(request.resource.data.cartorio_id)) &&
+        (resource == null || (resource.data.cartorio_id != 'SYSTEM' && belongsToCartorio(resource.data.cartorio_id))) &&
+        (request.resource == null || (request.resource.data.cartorio_id != 'SYSTEM' && belongsToCartorio(request.resource.data.cartorio_id))) &&
         hasRole('cartorio_admin')
       );
     }

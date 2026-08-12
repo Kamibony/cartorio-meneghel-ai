@@ -47,8 +47,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                       return;
                   }
 
-                  setCartorioId(tokenCartorioId || data.cartorio_id || null);
-                  setUserRole(tokenRole || data.role || null);
+                  // Force token refresh if role in Firestore doesn't match current token claims
+                  if (data.role && tokenRole && data.role !== tokenRole) {
+                      console.warn("Role mismatch detected. Forcing token refresh.");
+                      user.getIdToken(true).then((newToken) => {
+                          // we could parse new token, or just let the next reload get it,
+                          // but the assignment below might be stale. However, re-fetching token
+                          // usually means we just update the token for next requests.
+                          // To update UI instantly, we'll use the firestore data:
+                      }).catch(e => console.error("Failed to force refresh token", e));
+
+                      setUserRole(data.role || null);
+                      setCartorioId(data.cartorio_id || null);
+                  } else {
+                      setCartorioId(tokenCartorioId || data.cartorio_id || null);
+                      setUserRole(tokenRole || data.role || null);
+                  }
               } else {
                   setCartorioId(tokenCartorioId || null);
                   setUserRole(tokenRole || null);
