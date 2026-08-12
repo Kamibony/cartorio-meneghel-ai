@@ -8,6 +8,7 @@ export interface User {
   displayName: string;
   role: UserRole;
   cartorio_id: string; // Multi-tenant partition key
+  status: 'active' | 'revoked'; // Strictly typed user status
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

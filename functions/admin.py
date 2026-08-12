@@ -184,20 +184,28 @@ def reactivateEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
         if target_data.get("status") != "revoked":
             return https_fn.Response(json.dumps({"error": "User is not revoked"}), status=400)
 
-        # Reactivate access in Firebase Auth
-        auth.update_user(target_uid, disabled=False)
-
-        # Restore Custom Claims
-        auth.set_custom_user_claims(target_uid, {
-            "cartorio_id": target_data.get("cartorio_id"),
-            "role": target_data.get("role")
-        })
-
-        # Update status in Firestore
-        db.collection("users").document(target_uid).update({
+        # 1. Update status in Firestore FIRST to guarantee immediate UI consistency and kill-switch deactivation.
+        user_ref = db.collection("users").document(target_uid)
+        user_ref.update({
             "status": "active",
             "updatedAt": firestore.SERVER_TIMESTAMP
         })
+
+        try:
+            # 2. Reactivate access in Firebase Auth and restore Custom Claims atomically.
+            auth.update_user(target_uid, disabled=False)
+            auth.set_custom_user_claims(target_uid, {
+                "cartorio_id": target_data.get("cartorio_id"),
+                "role": target_data.get("role")
+            })
+        except Exception as e:
+            # 3. Rollback Firestore state if Auth SDK fails to prevent a desynced state.
+            logger.error(f"Auth SDK failed during reactivate for user {target_uid}. Rolling back. Error: {e}")
+            user_ref.update({
+                "status": "revoked",
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            })
+            return https_fn.Response(json.dumps({"error": "Failed to reactivate access in Auth system. State rolled back."}), status=500)
 
         return https_fn.Response(
             json.dumps({"status": "success", "message": "Access reactivated successfully"}),
@@ -276,15 +284,25 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
         if target_data.get("role") == "cartorio_admin" and caller_role != "super_admin":
              return https_fn.Response(json.dumps({"error": "Forbidden: Cannot revoke another admin"}), status=403)
 
-        # Revoke access in Firebase Auth
-        auth.update_user(target_uid, disabled=True)
-        auth.revoke_refresh_tokens(target_uid)
-
-        # Update status in Firestore
-        db.collection("users").document(target_uid).update({
+        # 1. Update status in Firestore FIRST to immediately trigger the UI kill-switch
+        user_ref = db.collection("users").document(target_uid)
+        user_ref.update({
             "status": "revoked",
             "updatedAt": firestore.SERVER_TIMESTAMP
         })
+
+        try:
+            # 2. Revoke access in Firebase Auth
+            auth.update_user(target_uid, disabled=True)
+            auth.revoke_refresh_tokens(target_uid)
+        except Exception as e:
+            # 3. Rollback Firestore state if Auth SDK fails to prevent a desynced state
+            logger.error(f"Auth SDK failed during revoke for user {target_uid}. Rolling back. Error: {e}")
+            user_ref.update({
+                "status": "active",
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            })
+            return https_fn.Response(json.dumps({"error": "Failed to revoke access in Auth system. State rolled back."}), status=500)
 
         return https_fn.Response(
             json.dumps({"status": "success", "message": "Access revoked successfully"}),

@@ -232,14 +232,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ injectedCartorioId }) =
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {(user as any).status === 'active' ? (
+                      {user.status === 'active' ? (
                           <span className="text-green-600 font-medium">Ativo</span>
                       ) : (
                           <span className="text-red-500">Revogado</span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {(user as any).status === 'active' && (userRole === 'super_admin' || user.role !== 'cartorio_admin') && (
+                        {user.status === 'active' && (userRole === 'super_admin' || user.role !== 'cartorio_admin') && (
                             <button
                                 onClick={() => handleRevoke(user.uid)}
                                 className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md transition-colors"
@@ -247,7 +247,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ injectedCartorioId }) =
                                 Revogar
                             </button>
                         )}
-                        {(user as any).status === 'revoked' && (userRole === 'super_admin' || user.role !== 'cartorio_admin') && (
+                        {user.status === 'revoked' && (userRole === 'super_admin' || user.role !== 'cartorio_admin') && (
                             <button
                                 onClick={() => handleReactivate(user.uid)}
                                 className="text-green-600 hover:text-green-900 bg-green-50 hover:bg-green-100 px-3 py-1 rounded-md transition-colors"
