@@ -10,6 +10,6 @@
       "valor_imovel",
       "nome_vendedor"
     ],
-    "expected_text": "Comprador: João da Silva\nValor: R$ 500.000,00\nVendedor: Maria Souza"
+    "expected_text": "Comprador: João da Silva\nImovel: R$ 500.000,00\nVendedor: Maria Souza"
   }
 }
