@@ -187,6 +187,12 @@ def reactivateEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
         # Reactivate access in Firebase Auth
         auth.update_user(target_uid, disabled=False)
 
+        # Restore Custom Claims
+        auth.set_custom_user_claims(target_uid, {
+            "cartorio_id": target_data.get("cartorio_id"),
+            "role": target_data.get("role")
+        })
+
         # Update status in Firestore
         db.collection("users").document(target_uid).update({
             "status": "active",

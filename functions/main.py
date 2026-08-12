@@ -244,6 +244,12 @@ def finalize_validation(req: https_fn.Request) -> https_fn.Response:
         decoded_token = auth.verify_id_token(token)
         uid = decoded_token.get("uid")
 
+        token_cartorio_id = decoded_token.get("cartorio_id")
+        token_role = decoded_token.get("role")
+
+        if token_role != "super_admin" and token_cartorio_id != cartorio_id:
+             return https_fn.Response(json.dumps({"error": "Forbidden: Cannot access another tenant"}), status=403)
+
         db = firestore.client()
         minuta_ref = db.collection("minutas").document(document_id)
         minuta_doc = minuta_ref.get()
@@ -798,13 +804,20 @@ def generate_document(req: https_fn.CallableRequest) -> dict:
 
         user_data = user_doc.to_dict()
         data = req.data
-        cartorio_id = data.get("cartorio_id")
-
-        if not cartorio_id or user_data.get('cartorio_id') != cartorio_id:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
 
         if not data:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
+
+        cartorio_id = data.get("cartorio_id")
+        user_role = user_data.get('role')
+        user_cartorio_id = user_data.get('cartorio_id')
+
+        if not cartorio_id:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
+        if user_role != 'super_admin' and user_cartorio_id != cartorio_id:
+            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized")
+
 
         cartorio_id = data.get("cartorio_id")
         template_id = data.get("template_id")
