@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import DocumentViewer from '../DocumentViewer';
 import ExtractionReviewPanel from '../ExtractionReviewPanel';
 import TemplateGeneratorInput from '../TemplateGeneratorInput';
@@ -42,7 +42,7 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
         return false;
     };
 
-    const handleDataExtracted = (data: any) => {
+    const handleDataExtracted = useCallback((data: any) => {
         setGroundTruth(data);
         setHasAcknowledgedGroundTruth(false);
         // Clear old generation results
@@ -51,9 +51,9 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
         setResolvedErrors(new Set());
         setInteractiveDiffBlocks(null);
         setCorrectedText(null);
-    };
+    }, []);
 
-    const handleDocumentGenerated = (text: string) => {
+    const handleDocumentGenerated = useCallback((text: string) => {
         setDraftText(text);
         // Reset validation view
         setValidationErrors(null);
@@ -61,7 +61,7 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
         setInteractiveDiffBlocks(null);
         setCorrectedText(null);
         setViewMode('validation');
-    };
+    }, []);
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
@@ -70,6 +70,16 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
             </section>
 
             <section className="h-full overflow-hidden flex flex-col gap-4">
+                {!groundTruth && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50 border border-gray-200 rounded-lg p-6 text-center shadow-sm">
+                        <svg className="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <p className="font-medium text-gray-500 text-lg mb-2">Aguardando Extração</p>
+                        <p className="text-sm">Envie um documento no painel ao lado para extrair os dados e iniciar a geração da minuta.</p>
+                    </div>
+                )}
+
                 <ExtractionReviewPanel
                     resolvedGroundTruth={resolvedGroundTruth}
                     setResolvedGroundTruth={setResolvedGroundTruth}

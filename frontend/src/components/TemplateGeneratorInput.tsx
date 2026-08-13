@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { auth, db } from '../utils/firebase';
-import { collection, query, getDocs } from 'firebase/firestore';
+import { collection, query, getDocs, where } from 'firebase/firestore';
 import { ENV } from '../config/env';
 
 interface Template {
@@ -28,7 +28,10 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
     const fetchTemplates = async () => {
       if (!cartorioId) return;
       try {
-        const q = query(collection(db, 'templates'));
+        const q = query(
+          collection(db, 'templates'),
+          where('cartorio_id', 'in', [cartorioId, 'SYSTEM'])
+        );
         const snapshot = await getDocs(q);
         const tpls: Template[] = [];
         snapshot.forEach(doc => {

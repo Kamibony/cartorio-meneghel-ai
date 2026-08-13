@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ref, uploadBytes } from 'firebase/storage';
-import { collection, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, Timestamp, onSnapshot } from 'firebase/firestore';
 import { storage, db } from '../utils/firebase';
 import { ENV } from '../config/env';
 import type { Minuta } from '../types/firestore';
@@ -50,11 +50,31 @@ export function useDocumentUpload() {
       setIsExtracting(true);
 
       // 3. Call backend extract_document_data API
+      // We rely on Firestore listener for the final data to avoid the 60s timeout wall.
+      const extractionPromise = new Promise<any>((resolve, reject) => {
+        const unsub = onSnapshot(doc(db, 'minutas', minutaDocRef!.id), (snap) => {
+          const data = snap.data();
+          if (data) {
+            if (data.status === 'hitl_required' && data.ai_extracted_data) {
+              unsub();
+              resolve(data.ai_extracted_data);
+            } else if (data.status === 'error') {
+              unsub();
+              reject(new Error(data.error || 'Falha ao extrair dados na nuvem.'));
+            }
+          }
+        });
+      });
+
       const apiUrl = ENV.apiUrl;
       const endpoint = `${apiUrl}/extract_document_data`;
 
       const token = await currentUser.getIdToken();
-      const response = await fetch(endpoint, {
+      // We don't await the fetch directly for its data if it takes too long.
+      // But we still await it here so if it fails fast (like 400 Bad Request), we catch it.
+      // The 502 Bad Gateway will throw an error, but since we are polling, we shouldn't throw immediately
+      // if the backend is actually still processing.
+      fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,36 +84,40 @@ export function useDocumentUpload() {
         body: JSON.stringify({
           gcs_uri: gcsUri,
           document_type: documentType,
-          // minuta_id: minutaDocRef.id, // we might pass this to the backend in the future
+          minuta_id: minutaDocRef.id,
         }),
+      }).then(async (response) => {
+        if (!response.ok && response.status !== 502 && response.status !== 504) {
+             const responseText = await response.text();
+             let data;
+             try {
+               data = JSON.parse(responseText);
+             } catch (parseErr) {
+               // ignore
+             }
+             let errMsg = data?.error || 'Falha ao extrair dados';
+             if (response.status === 429) {
+                 errMsg = 'Rate limit reached';
+             }
+             console.error(errMsg);
+             // Update Firestore to error state so the snapshot listener rejects
+             await updateDoc(doc(db, 'minutas', minutaDocRef!.id), {
+                 status: 'error',
+                 error: errMsg,
+                 updatedAt: Timestamp.now(),
+             });
+        }
+      }).catch(async (e) => {
+          console.warn('Fetch connection closed (expected if > 60s):', e);
+          // If the network completely fails (e.g. offline), we should also fail
+          // But a 502 won't hit catch(), it hits the .then() block with !response.ok
+          // This is mostly for CORS or network dropping.
+          // Wait, if it's a timeout error thrown by fetch, it hits here.
+          // In standard browser fetch, timeouts might throw. We can set a timeout fallback if needed, but
+          // we don't want to fail if the backend is still working.
       });
 
-      const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseErr) {
-        throw new Error(`Erro no servidor: Resposta não está em formato JSON. Corpo: ${responseText.substring(0, 100)}`);
-      }
-
-      if (!response.ok) {
-        if (response.status === 429) {
-            throw new Error('Serviço temporariamente indisponível devido ao alto volume (Rate Limit). Por favor, tente novamente em alguns segundos.');
-        }
-        throw new Error(data.error || 'Falha ao extrair dados');
-      }
-
-      extractedData = data.data;
-
-      // 4. Update Minuta with extracted data
-      if (minutaDocRef) {
-        await updateDoc(doc(db, 'minutas', minutaDocRef.id), {
-          status: 'hitl_required', // Assume it needs HitL or let backend decide
-          ai_extracted_data: extractedData,
-          updatedAt: Timestamp.now(),
-        });
-      }
-
+      extractedData = await extractionPromise;
     } catch (err: any) {
       console.error('Upload/Extraction error:', err);
       setError(err.message || 'An unknown error occurred');

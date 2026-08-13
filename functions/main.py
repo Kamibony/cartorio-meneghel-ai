@@ -153,10 +153,24 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
             )
 
         document_type = data.get("document_type")
+        minuta_id = data.get("minuta_id")
 
         from core.extractor import DocumentExtractor
         extractor = DocumentExtractor()
         extracted_data = extractor.extract(gcs_uri, document_type=document_type)
+
+        if minuta_id:
+            from firebase_admin import firestore
+            db = firestore.client()
+            minuta_ref = db.collection("minutas").document(minuta_id)
+            try:
+                minuta_ref.update({
+                    "status": "hitl_required",
+                    "ai_extracted_data": extracted_data,
+                    "updatedAt": firestore.SERVER_TIMESTAMP
+                })
+            except Exception as update_err:
+                logger.error(f"Failed to update minuta {minuta_id}: {update_err}")
 
         return https_fn.Response(
             json.dumps({"status": "success", "data": extracted_data}, ensure_ascii=False, allow_nan=False),
@@ -166,6 +180,12 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     except ValueError as e:
         # Catch specific value errors raised during extraction (e.g., config missing)
         logger.error("ValueError in extract_document_data", exc_info=True)
+        if req.get_json(silent=True) and req.get_json(silent=True).get("minuta_id"):
+            minuta_id = req.get_json(silent=True).get("minuta_id")
+            from firebase_admin import firestore
+            db = firestore.client()
+            db.collection("minutas").document(minuta_id).update({"status": "error", "error": str(e)})
+
         return https_fn.Response(
             json.dumps({
                 "error": str(e),
@@ -176,6 +196,12 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         )
     except Exception as e:
         logger.error("Error in extract_document_data", exc_info=True)
+        if req.get_json(silent=True) and req.get_json(silent=True).get("minuta_id"):
+            minuta_id = req.get_json(silent=True).get("minuta_id")
+            from firebase_admin import firestore
+            db = firestore.client()
+            db.collection("minutas").document(minuta_id).update({"status": "error", "error": f"Internal server error: {str(e)}"})
+
         status_code = 500
         error_code = "INTERNAL_ERROR"
         if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
