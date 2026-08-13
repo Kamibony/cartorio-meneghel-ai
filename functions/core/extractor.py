@@ -106,6 +106,7 @@ class DocumentExtractor:
                 "4. All extracted attribute values MUST be flat strings.\n"
                 "5. Translate all keys and values into Brazilian Portuguese (pt-BR).\n"
                 "6. Identify the document type and set it at the top-level 'document_type' field (e.g., 'Certidão de Casamento', 'RG', 'CNH', 'Matrícula').\n"
+                "7. Ignore any QR codes or barcodes. Do not attempt to transcribe them.\n"
                 "</BUSINESS_RULES>\n"
                 "<OUTPUT_SCHEMA>\n"
                 "Return a JSON object with two top-level keys:\n"

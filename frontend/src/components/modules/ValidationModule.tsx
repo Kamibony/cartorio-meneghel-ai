@@ -164,43 +164,41 @@ const ValidationModule: React.FC<ValidationModuleProps> = ({
            hasUnresolvedConflicts={hasUnresolvedConflicts}
         />
 
-        {groundTruth && (!hasUnresolvedConflicts() && hasAcknowledgedGroundTruth) && (
-            <>
-               <ManualDraftInput
-                 inputType={inputType}
-                 setInputType={setInputType}
-                 typedText={typedText}
-                 setTypedText={setTypedText}
-                 draftFile={draftFile}
-                 setDraftFile={setDraftFile}
-                 isValidating={isValidating}
-               />
-               <ValidationResultsPanel
-                 groundTruth={groundTruth}
-                 resolvedGroundTruth={resolvedGroundTruth}
-                 hasUnresolvedConflicts={hasUnresolvedConflicts}
-                 typedText={typedText}
-                 draftFile={draftFile}
-                 inputType={inputType}
-                 cachedDraftText={cachedDraftText}
-                 setCachedDraftText={setCachedDraftText}
-                 isValidating={isValidating}
-                 setIsValidating={setIsValidating}
-                 validationErrors={validationErrors}
-                 setValidationErrors={setValidationErrors}
-                 resolvedErrors={resolvedErrors}
-                 setResolvedErrors={setResolvedErrors}
-                 interactiveDiffBlocks={interactiveDiffBlocks}
-                 setInteractiveDiffBlocks={setInteractiveDiffBlocks}
-                 correctedText={correctedText}
-                 setCorrectedText={setCorrectedText}
-                 viewMode={viewMode}
-                 setViewMode={setViewMode}
-                 draftId={draftId}
-                 onValidationComplete={handleValidationComplete}
-               />
-            </>
-        )}
+        <>
+           <ManualDraftInput
+             inputType={inputType}
+             setInputType={setInputType}
+             typedText={typedText}
+             setTypedText={setTypedText}
+             draftFile={draftFile}
+             setDraftFile={setDraftFile}
+             isValidating={isValidating}
+           />
+           <ValidationResultsPanel
+             groundTruth={groundTruth}
+             resolvedGroundTruth={resolvedGroundTruth}
+             hasUnresolvedConflicts={hasUnresolvedConflicts}
+             typedText={typedText}
+             draftFile={draftFile}
+             inputType={inputType}
+             cachedDraftText={cachedDraftText}
+             setCachedDraftText={setCachedDraftText}
+             isValidating={isValidating}
+             setIsValidating={setIsValidating}
+             validationErrors={validationErrors}
+             setValidationErrors={setValidationErrors}
+             resolvedErrors={resolvedErrors}
+             setResolvedErrors={setResolvedErrors}
+             interactiveDiffBlocks={interactiveDiffBlocks}
+             setInteractiveDiffBlocks={setInteractiveDiffBlocks}
+             correctedText={correctedText}
+             setCorrectedText={setCorrectedText}
+             viewMode={viewMode}
+             setViewMode={setViewMode}
+             draftId={draftId}
+             onValidationComplete={handleValidationComplete}
+           />
+        </>
       </section>
     </div>
   );

@@ -50,8 +50,12 @@ export function useDocumentUpload() {
       setIsExtracting(true);
 
       // 3. Call backend extract_document_data API
-      const apiUrl = ENV.apiUrl;
-      const endpoint = `${apiUrl}/extract_document_data`;
+      // Bypass hosting rewrite for this specific heavy endpoint to avoid 60s timeout
+      const projectId = ENV.firebase.projectId;
+      const region = "us-central1"; // Assuming Vertex/Functions are here as per standard config
+      const endpoint = ENV.isDev
+          ? `${ENV.apiUrl}/extract_document_data`
+          : `https://${region}-${projectId}.cloudfunctions.net/extract_document_data`;
 
       const token = await currentUser.getIdToken();
       const response = await fetch(endpoint, {

@@ -78,44 +78,42 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
                     hasUnresolvedConflicts={hasUnresolvedConflicts}
                 />
 
-                {groundTruth && (!hasUnresolvedConflicts() && hasAcknowledgedGroundTruth) && (
-                    <>
-                        <TemplateGeneratorInput
-                            groundTruth={resolvedGroundTruth}
-                            onGenerated={handleDocumentGenerated}
-                        />
+                <>
+                    <TemplateGeneratorInput
+                        groundTruth={resolvedGroundTruth}
+                        onGenerated={handleDocumentGenerated}
+                    />
 
-                        {draftText && (
-                            <ValidationResultsPanel
-                                groundTruth={groundTruth}
-                                resolvedGroundTruth={resolvedGroundTruth}
-                                hasUnresolvedConflicts={hasUnresolvedConflicts}
-                                typedText={draftText}
-                                draftFile={null} // Not using file upload here
-                                inputType={'typing'} // Force validation on the generated text
-                                cachedDraftText={null}
-                                setCachedDraftText={() => {}}
-                                isValidating={isValidating}
-                                setIsValidating={setIsValidating}
-                                validationErrors={validationErrors}
-                                setValidationErrors={setValidationErrors}
-                                resolvedErrors={resolvedErrors}
-                                setResolvedErrors={setResolvedErrors}
-                                interactiveDiffBlocks={interactiveDiffBlocks}
-                                setInteractiveDiffBlocks={setInteractiveDiffBlocks}
-                                correctedText={correctedText}
-                                setCorrectedText={setCorrectedText}
-                                viewMode={viewMode}
-                                setViewMode={setViewMode}
-                                draftId={draftId}
-                                onValidationComplete={() => {
-                                    setGroundTruth(null);
-                                    setDraftId(null);
-                                }}
-                            />
-                        )}
-                    </>
-                )}
+                    {draftText && (
+                        <ValidationResultsPanel
+                            groundTruth={groundTruth}
+                            resolvedGroundTruth={resolvedGroundTruth}
+                            hasUnresolvedConflicts={hasUnresolvedConflicts}
+                            typedText={draftText}
+                            draftFile={null} // Not using file upload here
+                            inputType={'typing'} // Force validation on the generated text
+                            cachedDraftText={null}
+                            setCachedDraftText={() => {}}
+                            isValidating={isValidating}
+                            setIsValidating={setIsValidating}
+                            validationErrors={validationErrors}
+                            setValidationErrors={setValidationErrors}
+                            resolvedErrors={resolvedErrors}
+                            setResolvedErrors={setResolvedErrors}
+                            interactiveDiffBlocks={interactiveDiffBlocks}
+                            setInteractiveDiffBlocks={setInteractiveDiffBlocks}
+                            correctedText={correctedText}
+                            setCorrectedText={setCorrectedText}
+                            viewMode={viewMode}
+                            setViewMode={setViewMode}
+                            draftId={draftId}
+                            onValidationComplete={() => {
+                                setGroundTruth(null);
+                                setDraftId(null);
+                            }}
+                        />
+                    )}
+                </>
             </section>
         </div>
     );
