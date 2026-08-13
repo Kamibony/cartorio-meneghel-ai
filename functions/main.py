@@ -160,6 +160,8 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         extracted_data = extractor.extract(gcs_uri, document_type=document_type)
 
         if minuta_id:
+            from core.firebase_utils import _init_firebase
+            _init_firebase()
             from firebase_admin import firestore
             db = firestore.client()
             minuta_ref = db.collection("minutas").document(minuta_id)
@@ -182,6 +184,8 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         logger.error("ValueError in extract_document_data", exc_info=True)
         if req.get_json(silent=True) and req.get_json(silent=True).get("minuta_id"):
             minuta_id = req.get_json(silent=True).get("minuta_id")
+            from core.firebase_utils import _init_firebase
+            _init_firebase()
             from firebase_admin import firestore
             db = firestore.client()
             db.collection("minutas").document(minuta_id).update({"status": "error", "error": str(e)})
@@ -198,6 +202,8 @@ def extract_document_data(req: https_fn.Request) -> https_fn.Response:
         logger.error("Error in extract_document_data", exc_info=True)
         if req.get_json(silent=True) and req.get_json(silent=True).get("minuta_id"):
             minuta_id = req.get_json(silent=True).get("minuta_id")
+            from core.firebase_utils import _init_firebase
+            _init_firebase()
             from firebase_admin import firestore
             db = firestore.client()
             db.collection("minutas").document(minuta_id).update({"status": "error", "error": f"Internal server error: {str(e)}"})
