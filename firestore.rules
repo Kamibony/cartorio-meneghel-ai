@@ -47,26 +47,21 @@ service cloud.firestore {
 
     // Cartorios Collection (Multi-tenant Root)
     match /cartorios/{cartorioId} {
+      // super_admin should only have global bypass for listing/reading cartorios root docs
       allow read: if hasRole('super_admin') || belongsToCartorio(cartorioId);
       allow write: if hasRole('super_admin');
       allow create: if hasRole('super_admin');
 
       // Minutas Collection (deprecated, moved to root but kept here for backward compatibility)
       match /minutas/{minutaId} {
-        // Any user belonging to the cartorio can read/write minutas
         allow read: if belongsToCartorio(cartorioId) || hasValidSupportGrant(minutaId);
-        allow write: if belongsToCartorio(cartorioId);
+        allow write: if belongsToCartorio(cartorioId) && request.resource.data.cartorio_id == cartorioId;
       }
 
       // Audit Logs Collection
       match /audit_logs/{logId} {
-        // Any user belonging to the cartorio can append to audit logs
-        allow create: if belongsToCartorio(cartorioId);
-
-        // Only admins belonging to the cartorio can read audit logs
+        allow create: if belongsToCartorio(cartorioId) && request.resource.data.cartorio_id == cartorioId;
         allow read: if belongsToCartorio(cartorioId) && hasRole('cartorio_admin');
-
-        // Audit logs are immutable (no update or delete)
         allow update, delete: if false;
       }
     }

@@ -100,10 +100,24 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
             "role": role
         })
 
-        # Send password reset link
+        # Generate OOB link for password reset
         link = auth.generate_password_reset_link(email)
+
+        # Extract OOB code and construct custom frontend URL
+        from urllib.parse import urlparse, parse_qs
+        parsed_url = urlparse(link)
+        query_params = parse_qs(parsed_url.query)
+        oob_code = query_params.get("oobCode", [None])[0]
+
+        if oob_code:
+            custom_link = f"https://our-app.com/accept-invite?oobCode={oob_code}"
+            logger.info(f"Custom invite link generated for {email}: {custom_link}")
+        else:
+            custom_link = link
+            logger.warning(f"Could not extract oobCode for {email}, falling back to default link: {link}")
+
         # In a real app we'd email this link using SendGrid or similar.
-        # For this exercise, we can return the link or assume it's handled.
+        # For this exercise, we log it and return it.
 
         # Create user document
         db.collection("users").document(new_user.uid).set({
@@ -117,7 +131,7 @@ def inviteEmployee(req: https_fn.Request) -> https_fn.Response:
         })
 
         return https_fn.Response(
-            json.dumps({"status": "success", "message": "User invited successfully", "uid": new_user.uid, "reset_link": link}),
+            json.dumps({"status": "success", "message": "User invited successfully", "uid": new_user.uid, "reset_link": custom_link}),
             status=200,
             content_type="application/json"
         )
@@ -301,9 +315,13 @@ def revokeEmployeeAccess(req: https_fn.Request) -> https_fn.Response:
         })
 
         try:
-            # 2. Revoke access in Firebase Auth
+            # 2. Revoke access in Firebase Auth and explicitly clear Custom Claims to enforce single source of truth
             auth.update_user(target_uid, disabled=True)
             auth.revoke_refresh_tokens(target_uid)
+            auth.set_custom_user_claims(target_uid, {
+                "role": None,
+                "cartorio_id": None
+            })
         except Exception as e:
             # 3. Rollback Firestore state if Auth SDK fails to prevent a desynced state
             logger.error(f"Auth SDK failed during revoke for user {target_uid}. Rolling back. Error: {e}")

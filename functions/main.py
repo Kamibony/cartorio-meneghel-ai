@@ -2,11 +2,87 @@ import json
 import os
 import logging
 import traceback
-from firebase_functions import https_fn, options
+from firebase_functions import https_fn, options, identity_fn, firestore_fn
 
 logger = logging.getLogger(__name__)
 
 from core.config import global_cors, GEMINI_MODEL
+
+@firestore_fn.on_document_written(document="users/{uid}")
+def sync_user_claims_on_write(event: firestore_fn.Event[firestore_fn.Change[firestore_fn.DocumentSnapshot]]) -> None:
+    """
+    Firestore trigger to synchronize user roles and cartorio_id to Auth Custom Claims.
+    """
+    from core.firebase_utils import _init_firebase
+    _init_firebase()
+    from firebase_admin import auth
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    user_uid = event.params["uid"]
+
+    # If the document is deleted, we don't necessarily delete the auth user here,
+    # but we could clear claims.
+    if not event.data.after:
+        try:
+            auth.set_custom_user_claims(user_uid, None)
+            logger.info(f"Cleared custom claims for deleted user document: {user_uid}")
+        except Exception as e:
+            logger.error(f"Failed to clear custom claims for deleted user {user_uid}: {e}")
+        return
+
+    after_data = event.data.after.to_dict()
+
+    # Extract fields we care about
+    status = after_data.get("status")
+    role = after_data.get("role")
+    cartorio_id = after_data.get("cartorio_id")
+
+    custom_claims = {}
+
+    if status == "revoked":
+        # Actively clear claims if revoked
+        custom_claims = {"role": None, "cartorio_id": None}
+    else:
+        custom_claims = {"role": role, "cartorio_id": cartorio_id}
+
+    try:
+        auth.set_custom_user_claims(user_uid, custom_claims)
+        logger.info(f"Successfully synced custom claims for user {user_uid}: {custom_claims}")
+    except Exception as e:
+        logger.error(f"Failed to sync custom claims for user {user_uid}: {e}")
+
+@identity_fn.before_user_signed_in()
+def before_user_signed_in(event: identity_fn.AuthBlockingEvent) -> identity_fn.BeforeSignInResponse:
+    """
+    Blocking function to sync Firestore custom claims before sign-in.
+    """
+    from core.firebase_utils import _init_firebase
+    _init_firebase()
+    from firebase_admin import firestore
+
+    db = firestore.client()
+    user_uid = event.data.uid
+    user_doc = db.collection("users").document(user_uid).get()
+
+    if not user_doc.exists:
+        return identity_fn.BeforeSignInResponse()
+
+    user_data = user_doc.to_dict()
+    custom_claims = {}
+
+    # Sync status: if revoked, we probably don't want them signing in, but this syncs claims anyway.
+    # The actual block is handled by UI kill-switch and firestore rules checking active state.
+    if user_data.get("status") == "revoked":
+        # Clear custom claims if revoked
+        custom_claims["role"] = None
+        custom_claims["cartorio_id"] = None
+    else:
+        custom_claims["role"] = user_data.get("role")
+        custom_claims["cartorio_id"] = user_data.get("cartorio_id")
+
+    return identity_fn.BeforeSignInResponse(custom_claims=custom_claims)
 
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)

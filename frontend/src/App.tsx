@@ -6,6 +6,7 @@ import DocumentViewer from './components/DocumentViewer';
 import DataChecker from './components/DataChecker';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
+import AcceptInvite from './components/AcceptInvite';
 import TeamManagement from './components/TeamManagement';
 import TemplateManager from './components/TemplateManager';
 import MinuteGenerator from './components/MinuteGenerator';
@@ -253,6 +254,10 @@ function Dashboard() {
 }
 
 function App() {
+  if (window.location.pathname === '/accept-invite') {
+    return <AcceptInvite />;
+  }
+
   return (
     <AuthProvider>
       <Dashboard />
