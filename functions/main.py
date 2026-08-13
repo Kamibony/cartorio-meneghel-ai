@@ -53,7 +53,7 @@ def sync_user_claims_on_write(event: firestore_fn.Event[firestore_fn.Change[fire
     except Exception as e:
         logger.error(f"Failed to sync custom claims for user {user_uid}: {e}")
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.GB_2, timeout_sec=1200)
 def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data autonomously from a batch of documents stored in GCS.
@@ -121,7 +121,7 @@ def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
         )
 
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.GB_2, timeout_sec=1200)
 def extract_document_data(req: https_fn.Request) -> https_fn.Response:
     """
     Extracts structured data from a document stored in GCS.
