@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../utils/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -137,7 +137,7 @@ const ValidationModule: React.FC<ValidationModuleProps> = ({
     if (onClose) onClose();
   };
 
-  const handleDataExtracted = (data: any) => {
+  const handleDataExtracted = useCallback((data: any) => {
       setGroundTruth(data);
       // Reset dependent states
       setResolvedGroundTruth(data ? JSON.parse(JSON.stringify(data)) : null);
@@ -147,7 +147,7 @@ const ValidationModule: React.FC<ValidationModuleProps> = ({
       setInteractiveDiffBlocks(null);
       setCorrectedText(null);
       setViewMode('validation');
-  };
+  }, []);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
@@ -156,6 +156,16 @@ const ValidationModule: React.FC<ValidationModuleProps> = ({
       </section>
 
       <section className="h-full overflow-hidden flex flex-col gap-4">
+        {!groundTruth && (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50 border border-gray-200 rounded-lg p-6 text-center shadow-sm">
+            <svg className="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <p className="font-medium text-gray-500 text-lg mb-2">Aguardando Extração</p>
+            <p className="text-sm">Envie um documento no painel ao lado para extrair os dados e iniciar a validação.</p>
+          </div>
+        )}
+
         <ExtractionReviewPanel
            resolvedGroundTruth={resolvedGroundTruth}
            setResolvedGroundTruth={setResolvedGroundTruth}
