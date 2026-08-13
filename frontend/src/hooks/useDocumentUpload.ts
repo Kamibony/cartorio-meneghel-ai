@@ -52,21 +52,43 @@ export function useDocumentUpload() {
       // 3. Call backend extract_document_data API
       // We rely on Firestore listener for the final data to avoid the 60s timeout wall.
       const extractionPromise = new Promise<any>((resolve, reject) => {
+        let isResolved = false;
         const unsub = onSnapshot(doc(db, 'minutas', minutaDocRef!.id), (snap) => {
           const data = snap.data();
           if (data) {
             if (data.status === 'hitl_required' && data.ai_extracted_data) {
               unsub();
+              isResolved = true;
+              clearTimeout(timeoutId);
               resolve(data.ai_extracted_data);
             } else if (data.status === 'error') {
               unsub();
+              isResolved = true;
+              clearTimeout(timeoutId);
               reject(new Error(data.error || 'Falha ao extrair dados na nuvem.'));
             }
           }
         });
+
+        // 3-minute timeout
+        const timeoutId = setTimeout(async () => {
+          if (!isResolved) {
+            unsub();
+            try {
+              await updateDoc(doc(db, 'minutas', minutaDocRef!.id), {
+                status: 'error',
+                error: 'Tempo de extração excedido (timeout).',
+                updatedAt: Timestamp.now(),
+              });
+            } catch (e) {
+              console.error('Failed to update minuta timeout status:', e);
+            }
+            reject(new Error('Tempo de extração excedido. Por favor, tente novamente.'));
+          }
+        }, 180000);
       });
 
-      const apiUrl = ENV.apiUrl;
+      const apiUrl = ENV.extractApiUrl;
       const endpoint = `${apiUrl}/extract_document_data`;
 
       const token = await currentUser.getIdToken();
@@ -87,18 +109,24 @@ export function useDocumentUpload() {
           minuta_id: minutaDocRef.id,
         }),
       }).then(async (response) => {
-        if (!response.ok && response.status !== 502 && response.status !== 504) {
-             const responseText = await response.text();
-             let data;
-             try {
-               data = JSON.parse(responseText);
-             } catch (parseErr) {
-               // ignore
-             }
-             let errMsg = data?.error || 'Falha ao extrair dados';
-             if (response.status === 429) {
+        if (!response.ok) {
+             // Treat 502/504 as failures as well to break the loading loop if Cloud Run fails early
+             let errMsg = 'Falha ao extrair dados';
+             if (response.status === 502 || response.status === 504) {
+                 errMsg = 'Erro de gateway (502/504). O servidor demorou muito para responder ou falhou.';
+             } else if (response.status === 429) {
                  errMsg = 'Rate limit reached';
+             } else {
+                 const responseText = await response.text();
+                 let data;
+                 try {
+                   data = JSON.parse(responseText);
+                   errMsg = data?.error || errMsg;
+                 } catch (parseErr) {
+                   // ignore
+                 }
              }
+
              console.error(errMsg);
              // Update Firestore to error state so the snapshot listener rejects
              await updateDoc(doc(db, 'minutas', minutaDocRef!.id), {
@@ -108,13 +136,16 @@ export function useDocumentUpload() {
              });
         }
       }).catch(async (e) => {
-          console.warn('Fetch connection closed (expected if > 60s):', e);
-          // If the network completely fails (e.g. offline), we should also fail
-          // But a 502 won't hit catch(), it hits the .then() block with !response.ok
-          // This is mostly for CORS or network dropping.
-          // Wait, if it's a timeout error thrown by fetch, it hits here.
-          // In standard browser fetch, timeouts might throw. We can set a timeout fallback if needed, but
-          // we don't want to fail if the backend is still working.
+          console.error('Fetch error:', e);
+          try {
+            await updateDoc(doc(db, 'minutas', minutaDocRef!.id), {
+              status: 'error',
+              error: 'Falha na conexão com o servidor. Verifique sua rede.',
+              updatedAt: Timestamp.now(),
+            });
+          } catch (updateErr) {
+            console.error('Failed to update minuta error state:', updateErr);
+          }
       });
 
       extractedData = await extractionPromise;
