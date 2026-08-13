@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './utils/firebase';
 import './index.css';
-import DocumentViewer from './components/DocumentViewer';
-import DataChecker from './components/DataChecker';
+import ValidationModule from './components/modules/ValidationModule';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import AcceptInvite from './components/AcceptInvite';
 import TeamManagement from './components/TeamManagement';
 import TemplateManager from './components/TemplateManager';
-import MinuteGenerator from './components/MinuteGenerator';
+import GeneratorModule from './components/modules/GeneratorModule';
 import EscreventeInbox from './components/EscreventeInbox';
 import MasterDashboard from './components/MasterDashboard';
 
@@ -215,20 +214,19 @@ function Dashboard() {
           {activeView === 'inbox' ? (
             <EscreventeInbox />
           ) : activeView === 'dashboard' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-              <section className="h-full overflow-hidden">
-                <DocumentViewer onDataExtracted={setGroundTruth} draftId={draftId} />
-              </section>
-
-              <section className="h-full overflow-hidden">
-                <DataChecker groundTruth={groundTruth} draftId={draftId} initialDraftState={initialDraftState} onValidationComplete={() => {
-                   setGroundTruth(null);
-                   setDraftId(null);
-                   setInitialDraftState(null);
-                   window.history.pushState({}, '', window.location.pathname);
-                   setCurrentView(userRole === 'super_admin' ? 'master_dashboard' : 'inbox');
-                }} />
-              </section>
+            <div className="h-full">
+               <ValidationModule
+                   initialDraftId={draftId}
+                   initialGroundTruth={groundTruth}
+                   initialDraftState={initialDraftState}
+                   onClose={() => {
+                       setGroundTruth(null);
+                       setDraftId(null);
+                       setInitialDraftState(null);
+                       window.history.pushState({}, '', window.location.pathname);
+                       setCurrentView(userRole === 'super_admin' ? 'master_dashboard' : 'inbox');
+                   }}
+               />
             </div>
           ) : activeView === 'team_management' ? (
             <div className="h-full overflow-auto">
@@ -240,7 +238,7 @@ function Dashboard() {
             </div>
           ) : activeView === 'minute_generator' ? (
             <div className="h-full overflow-auto">
-              <MinuteGenerator />
+              <GeneratorModule initialDraftId={draftId} initialGroundTruth={groundTruth} />
             </div>
           ) : activeView === 'master_dashboard' ? (
             <div className="h-full overflow-auto">
