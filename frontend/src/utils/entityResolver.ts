@@ -1,16 +1,16 @@
 export const getEntityDisplayName = (entity: any): string => {
   if (!entity) return "Entidade Sem Nome";
 
-  // Check common root-level properties
-  const rootName = entity.nome || entity.razao_social || entity.nome_fantasia || entity.descricao;
+  // 1. Check correct root-level properties
+  const rootName = entity.entity_name || entity.nome || entity.razao_social || entity.nome_fantasia || entity.name;
   if (rootName && typeof rootName === 'string' && rootName.trim() !== '') {
     return rootName.trim();
   }
 
-  // If the entity has nested attributes (like in some JSON structures where it's an array of key-value objects)
+  // 2. Check nested attributes correctly (using attr.key, not attr.name)
   if (Array.isArray(entity.attributes)) {
     for (const attr of entity.attributes) {
-      if (attr.name && (attr.name.toLowerCase() === 'nome' || attr.name.toLowerCase() === 'razao_social' || attr.name.toLowerCase() === 'razao social')) {
+      if (attr.key && (attr.key.toLowerCase() === 'nome' || attr.key.toLowerCase() === 'razao_social' || attr.key.toLowerCase() === 'razao social')) {
          if (attr.value && typeof attr.value === 'string' && attr.value.trim() !== '') {
             return attr.value.trim();
          }
@@ -18,9 +18,10 @@ export const getEntityDisplayName = (entity: any): string => {
     }
   }
 
-  // Iterate over all keys to find a potential name if nothing else matches
+  // 3. Iterate over all keys (checking for both 'nome' and 'name')
   for (const key of Object.keys(entity)) {
-    if (key.toLowerCase().includes('nome') || key.toLowerCase().includes('razao_social') || key.toLowerCase().includes('razaosocial')) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.includes('nome') || lowerKey.includes('name') || lowerKey.includes('razao_social')) {
       const val = entity[key];
       if (val && typeof val === 'string' && val.trim() !== '') {
         return val.trim();
