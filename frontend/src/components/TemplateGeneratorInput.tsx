@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { auth, db } from '../utils/firebase';
 import { collection, query, getDocs, where } from 'firebase/firestore';
 import { ENV } from '../config/env';
+import apiClient from '../api/client';
 
 interface Template {
   id: string;
@@ -96,38 +97,22 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("Não autenticado.");
-      const token = await user.getIdToken();
 
-      const response = await fetch(`${ENV.apiUrl}/generate_document`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          data: {
-            cartorio_id: cartorioId,
-            template_id: selectedTemplateId,
-            verified_data: formData,
-            draft_id: groundTruth?.document_id || null,
-            // Since we are taking from in-memory groundTruth (which is basically draft), we could use updatedAt, but
-            // for the new workflow where everything is in memory/synced, optimistic concurrency is less of an issue here
-            // unless we strictly want to prevent generation if the db changed. We will pass null for imported_at for now,
-            // or we could fetch the latest updated_at from the groundTruth object if it's there.
-            imported_at: groundTruth?.updatedAt ? {
-                 _seconds: groundTruth.updatedAt.seconds,
-                 _nanoseconds: groundTruth.updatedAt.nanoseconds
-             } : null
-          }
-        })
-      });
+      const payload = {
+        data: {
+          cartorio_id: cartorioId,
+          template_id: selectedTemplateId,
+          verified_data: formData,
+          draft_id: groundTruth?.document_id || null,
+          imported_at: groundTruth?.updatedAt ? {
+               _seconds: groundTruth.updatedAt.seconds,
+               _nanoseconds: groundTruth.updatedAt.nanoseconds
+           } : null
+        }
+      };
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error?.message || "Erro ao gerar minuta.");
-      }
+      const result: any = await apiClient.post(`${ENV.generateApiUrl}/generate_document`, payload);
 
-      const result = await response.json();
       if (result.result?.status === 'success' && result.result?.file_base64) {
           if (result.result.plain_text) {
               onGenerated(result.result.plain_text);
@@ -159,7 +144,7 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
 
     } catch (err: any) {
       console.error("Generate error", err);
-      setError(err.message);
+      setError(err.message || "Ocorreu um erro ao gerar a minuta.");
     } finally {
       setIsGenerating(false);
     }

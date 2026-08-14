@@ -1,6 +1,7 @@
+import apiClient from '../api/client';
+import { ENV } from '../config/env';
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import type { Minuta } from '../types/firestore';
@@ -60,9 +61,9 @@ const EscreventeInbox: React.FC = () => {
 
     setRequestingSupportId(taskId);
     try {
-        const functions = getFunctions();
-        const grantSupportAccess = httpsCallable(functions, 'grantSupportAccess');
-        await grantSupportAccess({ document_id: taskId, duration_hours: 24 });
+        await apiClient.post(`${ENV.apiUrl}/grantSupportAccess`, {
+            data: { document_id: taskId, duration_hours: 24 }
+        });
         alert("Acesso de suporte concedido com sucesso por 24 horas.");
     } catch (error: any) {
         console.error("Erro ao solicitar suporte:", error);

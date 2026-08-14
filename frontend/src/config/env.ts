@@ -25,6 +25,13 @@ export const ENV = {
     // Fallback to apiUrl if not specifically provided (e.g., local dev or if using standard hosting rewrite)
     return this.apiUrl;
   },
+  get generateApiUrl() {
+    const configuredGenerateUrl = import.meta.env.VITE_GENERATE_API_URL;
+    if (configuredGenerateUrl) {
+      return configuredGenerateUrl;
+    }
+    return this.apiUrl;
+  },
   firebase: {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "mock-key",
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
