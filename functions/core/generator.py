@@ -108,3 +108,57 @@ def extract_tags_from_template(template_bytes: bytes) -> list:
     except Exception as e:
         logger.error(f"Error extracting tags from template: {e}")
         raise ValueError(f"Invalid docx template or malformed tags: {str(e)}")
+
+
+def generate_roles_schema_for_template(required_tags: list) -> list:
+    """
+    Uses Gemini LLM to analyze the Jinja2 tags and deduce logical roles and mapping schema.
+    Returns a list of roles, e.g., [{"role": "Outorgante", "expected_entity_type": "Person", "mapping": {"nome": "NOME_OUTORGANTE", "cpf": "CPF_OUTORGANTE"}}]
+    """
+    if not required_tags:
+        return []
+
+    try:
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+
+        from pydantic import BaseModel, Field
+        from typing import Dict, List
+
+        class RoleSchema(BaseModel):
+            role: str = Field(description="The logical name of the role (e.g., 'Outorgante', 'Outorgado', 'Imóvel').")
+            expected_entity_type: str = Field(description="The expected type of entity for this role (e.g., 'Person', 'Company', 'Property').")
+            mapping: Dict[str, str] = Field(description="A dictionary mapping standard entity attributes (like 'nome', 'cpf', 'cnpj', 'endereco') to the exact required Jinja2 tag from the list.")
+
+        class TemplateSchemaResponse(BaseModel):
+            roles: List[RoleSchema]
+
+        prompt = f"""
+You are an expert system that analyzes Jinja2 template tags used in Brazilian legal documents (Cartório).
+Your task is to group the provided list of individual tags into logical "Roles" (e.g., Outorgante, Procurador, Imóvel).
+
+For each role, define an `expected_entity_type` (like 'Person', 'Company', 'Property') and provide a `mapping` that connects generic entity attributes (like 'nome', 'cpf', 'rg', 'nacionalidade', 'estado_civil', 'profissao', 'endereco') to the specific tags.
+
+List of required tags:
+{json.dumps(required_tags)}
+
+Analyze the prefixes, suffixes, and patterns in the tags to deduce the roles. For example, if you see NOME_OUTORGANTE and CPF_OUTORGANTE, group them under an "Outorgante" role. Only map tags that logically belong to an entity role. Do not invent tags that are not in the provided list.
+"""
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=TemplateSchemaResponse,
+                temperature=0.0
+            ),
+        )
+
+        parsed_response = json.loads(response.text)
+        return parsed_response.get('roles', [])
+
+    except Exception as e:
+        logger.error(f"Error calling LLM to generate roles schema: {e}")
+        return []
