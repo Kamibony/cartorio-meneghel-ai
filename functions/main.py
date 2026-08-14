@@ -811,7 +811,7 @@ def register_template(req: https_fn.Request) -> https_fn.Response:
 
         template_bytes = blob.download_as_bytes()
 
-        from core.generator import extract_tags_from_template
+        from core.generator import extract_tags_from_template, generate_roles_schema_for_template
         try:
             required_tags = extract_tags_from_template(template_bytes)
         except ValueError as ve:
@@ -820,6 +820,12 @@ def register_template(req: https_fn.Request) -> https_fn.Response:
                 status=400,
                 content_type="application/json"
             )
+
+        try:
+            roles_schema = generate_roles_schema_for_template(required_tags)
+        except Exception as e:
+            logger.error(f"Error generating roles schema for template: {e}")
+            roles_schema = []
 
         doc_ref = db.collection("templates").document()
 
@@ -830,6 +836,7 @@ def register_template(req: https_fn.Request) -> https_fn.Response:
             "document_type": document_type,
             "gcs_path": gcs_path,
             "required_tags": required_tags,
+            "roles_schema": roles_schema,
             "created_by": created_by,
             "created_at": firestore.SERVER_TIMESTAMP,
             "is_active": True
