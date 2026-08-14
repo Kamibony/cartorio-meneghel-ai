@@ -99,29 +99,27 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
       if (!user) throw new Error("Não autenticado.");
 
       const payload = {
-        data: {
-          cartorio_id: cartorioId,
-          template_id: selectedTemplateId,
-          verified_data: formData,
-          draft_id: groundTruth?.document_id || null,
-          imported_at: groundTruth?.updatedAt ? {
-               _seconds: groundTruth.updatedAt.seconds,
-               _nanoseconds: groundTruth.updatedAt.nanoseconds
-           } : null
-        }
+        cartorio_id: cartorioId,
+        template_id: selectedTemplateId,
+        verified_data: formData,
+        draft_id: groundTruth?.document_id || null,
+        imported_at: groundTruth?.updatedAt ? {
+             _seconds: groundTruth.updatedAt.seconds,
+             _nanoseconds: groundTruth.updatedAt.nanoseconds
+         } : null
       };
 
       const result: any = await apiClient.post(`${ENV.generateApiUrl}/generate_document`, payload);
 
-      if (result.result?.status === 'success' && result.result?.file_base64) {
-          if (result.result.plain_text) {
-              onGenerated(result.result.plain_text);
+      if (result.status === 'success' && result.file_base64) {
+          if (result.plain_text) {
+              onGenerated(result.plain_text);
           } else {
               throw new Error("O servidor não retornou o texto extraído da minuta (plain_text).");
           }
 
           // Also trigger download of the .docx
-          const base64Data = result.result.file_base64;
+          const base64Data = result.file_base64;
           const byteCharacters = atob(base64Data);
           const byteNumbers = new Array(byteCharacters.length);
           for (let i = 0; i < byteCharacters.length; i++) {

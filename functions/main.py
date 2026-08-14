@@ -924,27 +924,39 @@ def grantSupportAccess(req: https_fn.CallableRequest) -> dict:
         logger.error("Error in grantSupportAccess", exc_info=True)
         raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
 
-@https_fn.on_call(memory=options.MemoryOption.MB_512, timeout_sec=540)
-def generate_document(req: https_fn.CallableRequest) -> dict:
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
+def generate_document(req: https_fn.Request) -> https_fn.Response:
     """
     Generates a document from a registered template.
     Accepts Callable payload: {"cartorio_id": "...", "template_id": "...", "verified_data": {...}}
     """
-    if not req.auth:
-        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.UNAUTHENTICATED, message="Unauthenticated")
+    if req.method != "POST":
+        return https_fn.Response(json.dumps({"error": {"code": "METHOD_NOT_ALLOWED", "message": "Method not allowed"}}), status=405, content_type="application/json")
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(json.dumps({"error": {"code": "UNAUTHENTICATED", "message": "Unauthenticated"}}), status=401, content_type="application/json")
+
+    token = auth_header.split("Bearer ")[1]
 
     try:
         from core.firebase_utils import _init_firebase
         _init_firebase()
-        from firebase_admin import firestore, storage
+        from firebase_admin import auth, firestore, storage
         db = firestore.client()
 
-        user_doc = db.collection('users').document(req.auth.uid).get()
+        try:
+            decoded_token = auth.verify_id_token(token)
+            uid = decoded_token.get("uid")
+        except Exception:
+            return https_fn.Response(json.dumps({"error": {"code": "UNAUTHENTICATED", "message": "Invalid token"}}), status=401, content_type="application/json")
+
+        user_doc = db.collection('users').document(uid).get()
         if not user_doc.exists:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="User not found")
 
         user_data = user_doc.to_dict()
-        data = req.data
+        data = req.get_json(silent=True)
 
         if not data:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
@@ -1045,10 +1057,45 @@ def generate_document(req: https_fn.CallableRequest) -> dict:
         import base64
         base64_encoded = base64.b64encode(generated_bytes).decode('utf-8')
 
-        return {"status": "success", "file_base64": base64_encoded}
+        from docx import Document
+        import io
+        try:
+            doc_parsed = Document(io.BytesIO(generated_bytes))
+            plain_text = '\n'.join([p.text for p in doc_parsed.paragraphs])
+        except Exception as e:
+            logger.error(f"Failed to parse docx for plain text: {e}")
+            plain_text = ""
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "file_base64": base64_encoded, "plain_text": plain_text}),
+            status=200,
+            content_type="application/json"
+        )
 
     except https_fn.HttpsError as he:
-        raise he
+        # Expected error contract for frontend
+        error_payload = {
+            "error": {
+                "code": he.code.name,
+                "message": he.message
+            }
+        }
+        # HttpsError typically returns 500 if we raise it in on_request natively unless mapped,
+        # but since we are doing on_request, let's map standard error codes to HTTP statuses
+        status_map = {
+            https_fn.FunctionsErrorCode.INVALID_ARGUMENT: 400,
+            https_fn.FunctionsErrorCode.UNAUTHENTICATED: 401,
+            https_fn.FunctionsErrorCode.PERMISSION_DENIED: 403,
+            https_fn.FunctionsErrorCode.NOT_FOUND: 404,
+            https_fn.FunctionsErrorCode.FAILED_PRECONDITION: 400,
+            https_fn.FunctionsErrorCode.INTERNAL: 500,
+        }
+        http_status = status_map.get(he.code, 500)
+        return https_fn.Response(json.dumps(error_payload), status=http_status, content_type="application/json")
     except Exception as e:
         logger.error("Error in generate_document", exc_info=True)
-        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
+        return https_fn.Response(
+            json.dumps({"error": {"code": "INTERNAL", "message": f"Internal server error: {str(e)}"}}),
+            status=500,
+            content_type="application/json"
+        )
