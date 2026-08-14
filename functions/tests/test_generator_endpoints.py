@@ -15,6 +15,6 @@ def mock_req():
     return req
 
 def test_endpoints_import():
-    from main import register_template, generate_document
+    from main import register_template, generate_document_api
     assert register_template is not None
-    assert generate_document is not None
+    assert generate_document_api is not None

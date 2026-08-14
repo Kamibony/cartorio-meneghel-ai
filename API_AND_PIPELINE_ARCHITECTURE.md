@@ -32,7 +32,7 @@ Currently, the frontend and backend are deployed concurrently, and the frontend 
 2. **Dynamic Endpoint Extraction:** Using the Firebase CLI or gcloud CLI within the Action, we will dynamically query the live URLs of the deployed functions.
    ```bash
    EXTRACT_URL=$(gcloud run services describe extract_document_data --region us-central1 --format 'value(status.url)')
-   GENERATE_URL=$(gcloud run services describe generate_document --region us-central1 --format 'value(status.url)')
+   GENERATE_URL=$(gcloud run services describe generate_document_api --region us-central1 --format 'value(status.url)')
    ```
 3. **Inject Env Vars & Build Frontend:** These dynamic URLs will be securely passed into the frontend build step as environment variables:
    ```bash
