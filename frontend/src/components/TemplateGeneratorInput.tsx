@@ -109,7 +109,13 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
          } : null
       };
 
-      const result: any = await apiClient.post(`${ENV.generateApiUrl}/generate_document_api`, payload);
+      // If ENV.generateApiUrl is the direct Cloud Run URL, it expects the root path or the function path.
+      // The Cloud Run URL directly maps to the function, but if it's the fallback '/api', we need the function name.
+      // We'll append it safely. If it's the fallback, it becomes /api/generate_document_api.
+      // Since Cloud Run (Gen2 Functions Framework) accepts the request at both `/` and `/<function_name>`,
+      // appending `/generate_document_api` works in both cases and prevents 404s.
+      const endpoint = `${ENV.generateApiUrl}/generate_document_api`;
+      const result: any = await apiClient.post(endpoint, payload);
 
       if (result.status === 'success' && result.file_base64) {
           if (result.plain_text) {
