@@ -20,7 +20,9 @@ export const ENV = {
   get extractApiUrl() {
     const configuredExtractUrl = import.meta.env.VITE_EXTRACT_API_URL;
     if (configuredExtractUrl) {
-      return configuredExtractUrl;
+      // Cloud Run URLs don't need the function name appended if we just hit the root, but our frontend appends `/<function_name>`.
+      // The Gen2 Functions framework routes all paths to the function, but it's cleaner if we strip any trailing slash.
+      return configuredExtractUrl.replace(/\/$/, "");
     }
     // Fallback to apiUrl if not specifically provided (e.g., local dev or if using standard hosting rewrite)
     return this.apiUrl;
@@ -28,7 +30,7 @@ export const ENV = {
   get generateApiUrl() {
     const configuredGenerateUrl = import.meta.env.VITE_GENERATE_API_URL;
     if (configuredGenerateUrl) {
-      return configuredGenerateUrl;
+      return configuredGenerateUrl.replace(/\/$/, "");
     }
     return this.apiUrl;
   },
