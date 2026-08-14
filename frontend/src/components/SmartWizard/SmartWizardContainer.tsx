@@ -51,6 +51,27 @@ const initialState: WizardState = {
   generatedFileUrl: null,
 };
 
+function getValueFromEntity(entity: any, attrName: string): any {
+  if (!entity || !attrName) return null;
+
+  // 1. Check root level
+  if (entity[attrName] !== undefined) {
+    return entity[attrName];
+  }
+
+  // 2. Check attributes array
+  if (Array.isArray(entity.attributes)) {
+    const attr = entity.attributes.find((a: any) =>
+      a.key && a.key.toLowerCase().trim() === attrName.toLowerCase().trim()
+    );
+    if (attr && attr.value !== undefined) {
+      return attr.value;
+    }
+  }
+
+  return null;
+}
+
 function wizardReducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
     case 'NEXT_STEP':
@@ -98,10 +119,11 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
             if (selectedEntity) {
               const mapping = roleSchema.mapping;
               for (const [entityAttr, mappedTag] of Object.entries(mapping)) {
-                if (mappedTag === tag && selectedEntity[entityAttr]) {
-                  newPayload[tag] = typeof selectedEntity[entityAttr] === 'string'
-                    ? selectedEntity[entityAttr]
-                    : JSON.stringify(selectedEntity[entityAttr]);
+                const val = getValueFromEntity(selectedEntity, entityAttr);
+                if (typeof mappedTag === 'string' && typeof tag === 'string' && mappedTag.trim().toLowerCase() === tag.trim().toLowerCase() && val !== null && val !== undefined && val !== '') {
+                  newPayload[tag] = typeof val === 'string'
+                    ? val
+                    : JSON.stringify(val);
                   return; // Break out of cascade for this tag
                 }
               }
