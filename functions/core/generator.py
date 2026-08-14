@@ -53,8 +53,8 @@ Your task is to take raw, verified JSON data representing entities (Buyers, Sell
 Rules:
 1. Ensure perfect gender agreement (e.g., "portador" vs "portadora", "brasileiro" vs "brasileira").
 2. Ensure perfect pluralization based on the number of entities (e.g., "vendedores" if > 1 seller).
-3. Do not invent, hallucinate, or assume any data not present in the raw JSON.
-4. Format dates extensively (e.g., "12 de maio de 2024").
+3. Do not invent, hallucinate, or assume any data not present in the raw JSON. Output ONLY the raw requested values for the schema, without inventing boilerplate context (like "portador do documento").
+4. Strictly preserve the exact formatting (especially dates and identifiers) as they appear in the <VERIFIED_JSON_DATA> to ensure a 100% deterministic match during validation.
 5. If a required field is missing from the verified data, output a standard placeholder (e.g., [DADO FALTANTE]).
 
 You must return a JSON object exactly matching the requested schema.

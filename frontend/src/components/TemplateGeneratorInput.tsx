@@ -24,6 +24,8 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatedText, setGeneratedText] = useState<string | null>(null);
+  const [generatedFileUrl, setGeneratedFileUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -79,6 +81,8 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
   const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedTemplateId(val);
+    setGeneratedText(null);
+    setGeneratedFileUrl(null);
     if (!val) {
       setFormData({});
     }
@@ -117,12 +121,11 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
 
       if (result.status === 'success' && result.file_base64) {
           if (result.plain_text) {
-              onGenerated(result.plain_text);
+              setGeneratedText(result.plain_text);
           } else {
               throw new Error("O servidor não retornou o texto extraído da minuta (plain_text).");
           }
 
-          // Also trigger download of the .docx
           const base64Data = result.file_base64;
           const byteCharacters = atob(base64Data);
           const byteNumbers = new Array(byteCharacters.length);
@@ -133,13 +136,7 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
           const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 
           const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = url;
-          a.download = `minuta_${Date.now()}.docx`;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(url);
+          setGeneratedFileUrl(url);
       } else {
           throw new Error("Resposta inválida do servidor.");
       }
@@ -204,15 +201,41 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
 
       {error && <div className="text-red-600 text-xs mt-2">{error}</div>}
 
-      <div className="pt-4 flex justify-end shrink-0 border-t border-gray-200 mt-4">
-          <button
-            onClick={handleGenerate}
-            disabled={isGenerating || !selectedTemplateId}
-            className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 disabled:bg-green-400 shadow-sm transition-colors"
-          >
-              {isGenerating ? 'Gerando...' : 'Gerar Minuta'}
-          </button>
-      </div>
+      {generatedText && generatedFileUrl ? (
+        <div className="mt-4 border-t border-gray-200 pt-4 flex-1 flex flex-col min-h-[300px]">
+          <h3 className="text-sm font-medium text-gray-800 mb-2">Pré-visualização da Minuta Gerada</h3>
+          <textarea
+            className="flex-1 w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm p-3 border bg-gray-50 resize-none"
+            readOnly
+            value={generatedText}
+          />
+          <div className="pt-4 flex justify-between shrink-0 mt-4">
+            <a
+              href={generatedFileUrl}
+              download={`minuta_${Date.now()}.docx`}
+              className="px-4 py-2 bg-gray-600 text-white text-sm font-bold rounded hover:bg-gray-700 shadow-sm transition-colors"
+            >
+              Baixar .docx
+            </a>
+            <button
+              onClick={() => onGenerated(generatedText)}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded hover:bg-blue-700 shadow-sm transition-colors"
+            >
+              Avançar para Validação
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="pt-4 flex justify-end shrink-0 border-t border-gray-200 mt-4">
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating || !selectedTemplateId}
+              className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 disabled:bg-green-400 shadow-sm transition-colors"
+            >
+                {isGenerating ? 'Gerando...' : 'Gerar Minuta'}
+            </button>
+        </div>
+      )}
     </div>
   );
 };
