@@ -109,7 +109,7 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
          } : null
       };
 
-      const result: any = await apiClient.post(`${ENV.generateApiUrl}/generate_document`, payload);
+      const result: any = await apiClient.post(`${ENV.generateApiUrl}/generate_document_api`, payload);
 
       if (result.status === 'success' && result.file_base64) {
           if (result.plain_text) {

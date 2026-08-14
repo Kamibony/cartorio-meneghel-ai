@@ -925,7 +925,7 @@ def grantSupportAccess(req: https_fn.CallableRequest) -> dict:
         raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=f"Internal server error: {str(e)}")
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
-def generate_document(req: https_fn.Request) -> https_fn.Response:
+def generate_document_api(req: https_fn.Request) -> https_fn.Response:
     """
     Generates a document from a registered template.
     Accepts Callable payload: {"cartorio_id": "...", "template_id": "...", "verified_data": {...}}
@@ -1093,7 +1093,7 @@ def generate_document(req: https_fn.Request) -> https_fn.Response:
         http_status = status_map.get(he.code, 500)
         return https_fn.Response(json.dumps(error_payload), status=http_status, content_type="application/json")
     except Exception as e:
-        logger.error("Error in generate_document", exc_info=True)
+        logger.error("Error in generate_document_api", exc_info=True)
         return https_fn.Response(
             json.dumps({"error": {"code": "INTERNAL", "message": f"Internal server error: {str(e)}"}}),
             status=500,
