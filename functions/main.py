@@ -978,7 +978,7 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
         draft_id = data.get("draft_id")
         imported_at = data.get("imported_at")
 
-        if not all([cartorio_id, template_id, verified_data]):
+        if not cartorio_id or not template_id or verified_data is None:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
 
         if draft_id and imported_at:

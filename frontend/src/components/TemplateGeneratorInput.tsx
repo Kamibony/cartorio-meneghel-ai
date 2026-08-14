@@ -53,31 +53,6 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
     fetchTemplates();
   }, [cartorioId]);
 
-  useEffect(() => {
-    // Auto-map groundTruth to formData when template changes or groundTruth changes
-    if (selectedTemplateId && groundTruth) {
-      const template = templates.find(t => t.id === selectedTemplateId);
-      if (template) {
-        const sourceData = groundTruth.human_final_data || groundTruth.ai_extracted_data || groundTruth;
-        const newFormData: Record<string, string> = {};
-
-        template.required_tags.forEach(tag => {
-          if (tag in sourceData) {
-            newFormData[tag] = typeof sourceData[tag] === 'string'
-              ? sourceData[tag]
-              : JSON.stringify(sourceData[tag], null, 2);
-          } else if (tag === 'dados_brutos' || tag === 'contexto') {
-            newFormData[tag] = JSON.stringify(sourceData, null, 2);
-          } else {
-            newFormData[tag] = `[JSON Contexto Disponível: ${JSON.stringify(sourceData, null, 2)}]`;
-          }
-        });
-
-        setFormData(newFormData);
-      }
-    }
-  }, [selectedTemplateId, groundTruth, templates]);
-
   const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedTemplateId(val);
@@ -98,10 +73,15 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
       const user = auth.currentUser;
       if (!user) throw new Error("Não autenticado.");
 
+      const sourceData = groundTruth?.human_final_data || groundTruth?.ai_extracted_data || groundTruth || {};
+
       const payload = {
         cartorio_id: cartorioId,
         template_id: selectedTemplateId,
-        verified_data: formData,
+        verified_data: {
+            ...formData,
+            _contexto_extraido: typeof sourceData === 'string' ? sourceData : JSON.stringify(sourceData)
+        },
         draft_id: groundTruth?.document_id || null,
         imported_at: groundTruth?.updatedAt ? {
              _seconds: groundTruth.updatedAt.seconds,
@@ -195,7 +175,7 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
                             onChange={(e) => handleInputChange(tag, e.target.value)}
                             rows={2}
                             className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs px-2 py-1.5 border"
-                            placeholder={`Descreva os dados para: ${tag}`}
+                            placeholder={`Instruções manuais para ${tag} (opcional)`}
                          />
                      )}
                  </div>
