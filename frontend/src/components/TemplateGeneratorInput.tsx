@@ -66,10 +66,8 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
             newFormData[tag] = typeof sourceData[tag] === 'string'
               ? sourceData[tag]
               : JSON.stringify(sourceData[tag], null, 2);
-          } else if (tag === 'dados_brutos' || tag === 'contexto') {
-            newFormData[tag] = JSON.stringify(sourceData, null, 2);
           } else {
-            newFormData[tag] = `[JSON Contexto Disponível: ${JSON.stringify(sourceData, null, 2)}]`;
+            newFormData[tag] = JSON.stringify(sourceData, null, 2);
           }
         });
 
