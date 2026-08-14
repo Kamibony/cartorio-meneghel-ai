@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import TeamManagement from './TeamManagement';
 import TemplateManager from './TemplateManager';
+import { useAuth } from '../contexts/AuthContext';
 
 const MasterDashboard = () => {
+    const { userRole, cartorioId } = useAuth();
     const [cartorios, setCartorios] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -21,13 +23,23 @@ const MasterDashboard = () => {
     const fetchCartorios = async () => {
         setLoading(true);
         try {
-            const q = query(collection(db, 'cartorios'));
-            const querySnapshot = await getDocs(q);
-            const cartoriosData = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setCartorios(cartoriosData);
+            if (userRole === 'super_admin') {
+                const q = query(collection(db, 'cartorios'));
+                const querySnapshot = await getDocs(q);
+                const cartoriosData = querySnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                setCartorios(cartoriosData);
+            } else if (cartorioId) {
+                const docRef = doc(db, 'cartorios', cartorioId);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    setCartorios([{ id: docSnap.id, ...docSnap.data() }]);
+                } else {
+                    setCartorios([]);
+                }
+            }
         } catch (error) {
             console.error("Error fetching cartorios:", error);
         } finally {
