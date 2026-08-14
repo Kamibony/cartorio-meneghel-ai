@@ -1,4 +1,5 @@
 import React from 'react';
+import { getEntityDisplayName } from '../../../utils/entityResolver';
 
 interface Props {
   template: any;
@@ -25,7 +26,7 @@ const Step2_RoleMapping: React.FC<Props> = ({ template, groundTruth, roleSelecti
 
   const renderEntityOption = (entity: any) => {
     // Make a best guess on what to show as the label
-    const name = entity.nome || entity.razao_social || entity.descricao || "Entidade Sem Nome";
+    const name = getEntityDisplayName(entity);
     const doc = entity.cpf || entity.cnpj || entity.matricula || "";
     return doc ? `${name} (${doc})` : name;
   };
