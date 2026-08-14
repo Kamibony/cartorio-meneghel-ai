@@ -54,8 +54,10 @@ Rules:
 1. Ensure perfect gender agreement (e.g., "portador" vs "portadora", "brasileiro" vs "brasileira").
 2. Ensure perfect pluralization based on the number of entities (e.g., "vendedores" if > 1 seller).
 3. Do not invent, hallucinate, or assume any data not present in the raw JSON.
-4. Format dates extensively (e.g., "12 de maio de 2024").
-5. If a required field is missing from the verified data, output a standard placeholder (e.g., [DADO FALTANTE]).
+4. Format dates strictly in the DD/MM/YYYY format (e.g., "21/06/2000") to match the extracted ground truth exactly. Do not use extensive formatting like "21 de junho".
+5. Do NOT prepend introductory phrases like "portador do documento", "inscrito no CPF", or "residente em" when filling raw values, as the docx template often already contains these introductory words.
+6. Explicitly ensure that critical fields such as "estado_civil" and "regime_bens" are included in the generated text if they are present in the JSON data.
+7. If a required field is missing from the verified data, output a standard placeholder (e.g., [DADO FALTANTE]).
 
 You must return a JSON object exactly matching the requested schema.
 
