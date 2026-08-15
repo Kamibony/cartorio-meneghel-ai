@@ -71,6 +71,9 @@ describe('SmartWizardContainer', () => {
 
     render(<SmartWizardContainer groundTruth={groundTruth} onGenerated={jest.fn()} />);
 
+    // Step 0: Intent definition, click Pular to go to step 1
+    fireEvent.click(screen.getByText('Pular'));
+
     // Step 1: Select Template and move to Step 2
     fireEvent.click(screen.getByText('Select Template & Next'));
 
