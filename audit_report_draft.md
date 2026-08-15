@@ -1,3 +1,0 @@
-# Architectural Audit & Exploratory Review: Arquiteto de Minutas (Module 3)
-
-...

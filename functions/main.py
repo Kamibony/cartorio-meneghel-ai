@@ -700,6 +700,117 @@ def log_hitl_resolution(req: https_fn.Request) -> https_fn.Response:
             content_type="application/json"
         )
 
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=120)
+def ingest_raw_clauses(req: https_fn.Request) -> https_fn.Response:
+    """
+    Ingests raw legal text, extracts clauses, vectorizes them, and saves to Firestore.
+    Accepts POST requests with JSON payload: {"raw_text": "...", "cartorio_id": "..."}
+    """
+    if req.method != "POST":
+        return https_fn.Response(json.dumps({"error": {"message": "Only POST requests are accepted", "status": "METHOD_NOT_ALLOWED"}}), status=405, content_type="application/json")
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(json.dumps({"error": {"message": "Unauthenticated", "status": "UNAUTHENTICATED"}}), status=401, content_type="application/json")
+
+    token = auth_header.split("Bearer ")[1]
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import auth, firestore
+        from google.cloud.firestore_v1.vector import Vector
+
+        try:
+            decoded_token = auth.verify_id_token(token)
+            uid = decoded_token.get("uid")
+        except Exception as e:
+            return https_fn.Response(json.dumps({"error": {"message": f"Invalid token: {str(e)}", "status": "UNAUTHENTICATED"}}), status=401, content_type="application/json")
+
+        db = firestore.client()
+        user_doc = db.collection('users').document(uid).get()
+        if not user_doc.exists:
+            return https_fn.Response(json.dumps({"error": {"message": "User not found", "status": "PERMISSION_DENIED"}}), status=403, content_type="application/json")
+
+        user_data = user_doc.to_dict()
+        user_role = user_data.get('role')
+        user_cartorio_id = user_data.get('cartorio_id')
+
+        if user_role not in ['super_admin']:
+            return https_fn.Response(json.dumps({"error": {"message": "Unauthorized: Only super_admin can ingest clauses", "status": "PERMISSION_DENIED"}}), status=403, content_type="application/json")
+
+        payload = req.get_json(silent=True)
+        if not payload:
+            return https_fn.Response(json.dumps({"error": {"message": "Missing JSON payload", "status": "INVALID_ARGUMENT"}}), status=400, content_type="application/json")
+
+        raw_text = payload.get("raw_text")
+        cartorio_id = payload.get("cartorio_id", "SYSTEM")
+
+        if not raw_text:
+            return https_fn.Response(json.dumps({"error": {"message": "Missing raw_text", "status": "INVALID_ARGUMENT"}}), status=400, content_type="application/json")
+
+        from core.generator import parse_clause_with_llm, vectorize_text
+
+        # 1. Parse Clauses
+        parsed_data = parse_clause_with_llm(raw_text)
+        clauses = parsed_data.get('clauses', [])
+
+        if not clauses:
+            return https_fn.Response(json.dumps({"error": {"message": "Failed to extract clauses from text", "status": "INTERNAL"}}), status=500, content_type="application/json")
+
+        saved_clauses = []
+        batch = db.batch()
+        clauses_ref = db.collection("clauses")
+
+        # 2. Vectorize and prepare batch
+        for clause_def in clauses:
+            title = clause_def.get("title", "")
+            text = clause_def.get("text", "")
+
+            # Combine title and text for rich embedding context
+            embedding_input = f"Title: {title}\nText: {text}"
+            embedding_vector = vectorize_text(embedding_input)
+
+            if not embedding_vector:
+                logger.warning(f"Skipping clause '{title}' due to embedding failure.")
+                continue
+
+            doc_ref = clauses_ref.document()
+
+            clause_data = {
+                "id": doc_ref.id,
+                "title": title,
+                "text": text,
+                "required_variables": clause_def.get("required_variables", []),
+                "scope_tags": clause_def.get("scope_tags", []),
+                "embedding": Vector(embedding_vector),  # Important: use Firestore Vector type
+                "is_active": True,
+                "cartorio_id": cartorio_id,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+                "version": 1
+            }
+            batch.set(doc_ref, clause_data)
+
+            # For response payload, we stringify the timestamp and omit the dense vector for brevity
+            clause_data["embedding"] = "[VECTOR HIDDEN]"
+            clause_data["created_at"] = "SERVER_TIMESTAMP"
+            clause_data["updated_at"] = "SERVER_TIMESTAMP"
+            saved_clauses.append(clause_data)
+
+        # 3. Commit to Firestore
+        batch.commit()
+
+        return https_fn.Response(
+            json.dumps({"data": {"status": "success", "ingested_clauses_count": len(saved_clauses), "clauses": saved_clauses}}),
+            status=200,
+            content_type="application/json"
+        )
+
+    except Exception as e:
+        logger.error("Error in ingest_raw_clauses", exc_info=True)
+        return https_fn.Response(json.dumps({"error": {"message": f"Internal server error: {str(e)}", "status": "INTERNAL"}}), status=500, content_type="application/json")
+
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def register_template(req: https_fn.Request) -> https_fn.Response:
     """
