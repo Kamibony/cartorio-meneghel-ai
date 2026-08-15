@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
 import { auth } from '../utils/firebase';
+import { ENV } from '../config/env';
 
 export interface AppError {
   code: string | number;
@@ -88,10 +89,12 @@ export const ingestRawClauses = async (rawText: string) => {
 };
 
 export const orchestrateDocument = async (intent: string) => {
-  const url = import.meta.env.VITE_ORCHESTRATE_API_URL || '/api/orchestrate_document';
-  const cleanUrl = url.replace(/\/$/, "");
+  const baseUrl = import.meta.env.VITE_ORCHESTRATE_API_URL;
+  const url = baseUrl
+    ? `${baseUrl.replace(/\/$/, "")}/orchestrate_document`
+    : `${ENV.apiUrl}/orchestrate_document`;
 
-  const response = await apiClient.post(cleanUrl, { intent });
+  const response = await apiClient.post(url, { intent });
   return response;
 };
 
