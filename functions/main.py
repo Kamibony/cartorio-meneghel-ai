@@ -353,20 +353,132 @@ def finalize_validation(req: https_fn.Request) -> https_fn.Response:
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=120)
 def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
     """
-    Tracer bullet endpoint for Phase 2 (Orchestrator).
-    Returns a hardcoded JSON response for now.
+    Phase 2 Orchestrator Endpoint.
+    Uses semantic embedding, vector search, and LLM to assemble document clauses based on user intent.
     """
     if req.method != "POST":
-        return https_fn.Response(json.dumps({"error": "Method not allowed"}), status=405)
+        return https_fn.Response(json.dumps({"error": "Method not allowed"}), status=405, content_type="application/json")
 
-    return https_fn.Response(
-        json.dumps({
-            "selected_clause_ids": ["test_id_1"],
-            "reasoning": "Tracer bullet test"
-        }),
-        status=200,
-        content_type="application/json"
-    )
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(json.dumps({"error": "Unauthenticated"}), status=401, content_type="application/json")
+
+    token = auth_header.split("Bearer ")[1]
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import auth, firestore
+        from google.cloud.firestore_v1.vector import Vector
+        from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+
+        try:
+            decoded_token = auth.verify_id_token(token)
+            user_cartorio = decoded_token.get("cartorio_id")
+            user_role = decoded_token.get("role")
+        except Exception:
+            return https_fn.Response(json.dumps({"error": "Invalid token"}), status=401, content_type="application/json")
+
+        req_data = req.get_json(silent=True) or {}
+        intent = req_data.get("intent")
+
+        if not intent:
+            return https_fn.Response(json.dumps({"error": "Missing intent"}), status=400, content_type="application/json")
+
+        from core.generator import vectorize_text
+        intent_vector = vectorize_text(intent)
+
+        if not intent_vector:
+            return https_fn.Response(json.dumps({"error": "Failed to vectorize intent"}), status=500, content_type="application/json")
+
+        db = firestore.client()
+        clauses_ref = db.collection("clauses")
+
+        # KNN vector search on Firestore
+        vector_query = clauses_ref.find_nearest(
+            vector_field="embedding",
+            query_vector=Vector(intent_vector),
+            distance_measure=DistanceMeasure.COSINE,
+            limit=10,
+        )
+
+        results = vector_query.get()
+
+        candidates = []
+        candidate_ids = set()
+        for doc in results:
+            doc_data = doc.to_dict()
+            c_cartorio = doc_data.get("cartorio_id", "SYSTEM")
+            # Enforce tenant isolation logic
+            if user_role != "super_admin" and c_cartorio not in [user_cartorio, "SYSTEM"]:
+                continue
+
+            candidate_ids.add(doc.id)
+            candidates.append({
+                "id": doc.id,
+                "title": doc_data.get("title", ""),
+                "text": doc_data.get("text", "")
+            })
+
+        if not candidates:
+             return https_fn.Response(json.dumps({
+                "selected_clause_ids": [],
+                "reasoning": "No relevant clauses found."
+             }), status=200, content_type="application/json")
+
+        from google import genai
+        from google.genai import types
+        import os
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+
+        prompt = f"""
+You are an expert legal orchestrator for a Brazilian Cartório.
+The user wants to generate a document based on the following intent:
+INTENT: "{intent}"
+
+Below is a list of candidate clauses retrieved from our legal database:
+{json.dumps(candidates, ensure_ascii=False, indent=2)}
+
+Your task is to select the optimal clauses from the candidates to fulfill the user's intent.
+Sequence them in the correct logical order for a legal document.
+Do NOT invent new clauses. Only select from the provided candidates.
+"""
+
+        from pydantic import BaseModel, Field
+        from typing import List
+
+        class OrchestrationResponse(BaseModel):
+            selected_clause_ids: List[str] = Field(description="List of selected clause IDs in logical sequence")
+            reasoning: str = Field(description="Explanation of why these clauses were selected and ordered this way")
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=OrchestrationResponse,
+                temperature=0.0
+            ),
+        )
+
+        parsed_response = json.loads(response.text)
+        llm_selected_ids = parsed_response.get("selected_clause_ids", [])
+
+        # Robust intersection check to prevent hallucination
+        final_selected_ids = [cid for cid in llm_selected_ids if cid in candidate_ids]
+        parsed_response["selected_clause_ids"] = final_selected_ids
+
+        return https_fn.Response(
+            json.dumps(parsed_response),
+            status=200,
+            content_type="application/json"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in orchestrate_document: {e}", exc_info=True)
+        return https_fn.Response(json.dumps({"error": str(e)}), status=500, content_type="application/json")
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def api_status(req: https_fn.Request) -> https_fn.Response:
