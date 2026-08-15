@@ -1,6 +1,7 @@
 import React, { useReducer, useEffect } from 'react';
 import Step1_TemplateSelection from './steps/Step1_TemplateSelection';
 import Step2_RoleMapping from './steps/Step2_RoleMapping';
+import Step3_SmartDropdowns from './steps/Step3_SmartDropdowns';
 import Step4_ReviewAndGenerate from './steps/Step4_ReviewAndGenerate';
 import { ENV } from '../../config/env';
 import apiClient from '../../api/client';
@@ -18,6 +19,7 @@ export interface WizardState {
   currentStep: number;
   selectedTemplate: Template | null;
   roleSelections: Record<string, any>; // maps role name to selected entity
+  arraySelections: Record<string, any[]>; // maps array name to selected items
   manualOverrides: Record<string, string>; // maps tag name to value
   finalPayload: Record<string, any>;
   isGenerating: boolean;
@@ -32,6 +34,7 @@ type WizardAction =
   | { type: 'SET_STEP'; payload: number }
   | { type: 'SELECT_TEMPLATE'; payload: Template | null }
   | { type: 'SELECT_ROLE'; payload: { roleName: string; entity: any } }
+  | { type: 'UPDATE_ARRAY_SELECTIONS'; payload: Record<string, any[]> }
   | { type: 'SET_MANUAL_OVERRIDE'; payload: { tag: string; value: string } }
   | { type: 'COMPUTE_FINAL_PAYLOAD'; payload: { groundTruth: any } }
   | { type: 'START_GENERATION' }
@@ -43,6 +46,7 @@ const initialState: WizardState = {
   currentStep: 1,
   selectedTemplate: null,
   roleSelections: {},
+  arraySelections: {},
   manualOverrides: {},
   finalPayload: {},
   isGenerating: false,
@@ -81,7 +85,7 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case 'SET_STEP':
       return { ...state, currentStep: action.payload };
     case 'SELECT_TEMPLATE':
-      return { ...state, selectedTemplate: action.payload, roleSelections: {}, manualOverrides: {}, finalPayload: {}, error: null, generatedText: null, generatedFileUrl: null };
+      return { ...state, selectedTemplate: action.payload, roleSelections: {}, arraySelections: {}, manualOverrides: {}, finalPayload: {}, error: null, generatedText: null, generatedFileUrl: null };
     case 'SELECT_ROLE':
       return {
         ...state,
@@ -89,6 +93,11 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
           ...state.roleSelections,
           [action.payload.roleName]: action.payload.entity,
         },
+      };
+    case 'UPDATE_ARRAY_SELECTIONS':
+      return {
+        ...state,
+        arraySelections: action.payload,
       };
     case 'SET_MANUAL_OVERRIDE':
       return {
@@ -149,6 +158,14 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
           return;
         }
 
+        // Cascade 2.5: Array selections (if any match the tag directly, e.g. "IMOVEIS" -> list of imoveis)
+        // Since tags are often uppercase and array keys lowercase, do a loose check
+        const matchingArrayKey = Object.keys(state.arraySelections).find(k => k.toLowerCase() === tag.toLowerCase());
+        if (matchingArrayKey && state.arraySelections[matchingArrayKey] && state.arraySelections[matchingArrayKey].length > 0) {
+            newPayload[tag] = JSON.stringify(state.arraySelections[matchingArrayKey], null, 2);
+            return;
+        }
+
         // Cascade 3: Raw verified_data (Fallback)
         if (tag in sourceData) {
           newPayload[tag] = typeof sourceData[tag] === 'string'
@@ -203,7 +220,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
   // Re-compute payload when roles or overrides change
   useEffect(() => {
     dispatch({ type: 'COMPUTE_FINAL_PAYLOAD', payload: { groundTruth } });
-  }, [state.selectedTemplate, state.roleSelections, state.manualOverrides, groundTruth]);
+  }, [state.selectedTemplate, state.roleSelections, state.arraySelections, state.manualOverrides, groundTruth]);
 
   const handleGenerate = async () => {
     if (!state.selectedTemplate || !cartorioId) return;
@@ -252,20 +269,11 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
   };
 
   const nextStep = () => {
-      // Logic for skipping step 3 (Variable Mapping is future phase)
-      if (state.currentStep === 2) {
-          dispatch({ type: 'SET_STEP', payload: 4 });
-      } else {
-          dispatch({ type: 'NEXT_STEP' });
-      }
+      dispatch({ type: 'NEXT_STEP' });
   }
 
   const prevStep = () => {
-      if (state.currentStep === 4) {
-          dispatch({ type: 'SET_STEP', payload: 2 });
-      } else {
-          dispatch({ type: 'PREV_STEP' });
-      }
+      dispatch({ type: 'PREV_STEP' });
   }
 
   return (
@@ -275,7 +283,9 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
           <span>&gt;</span>
           <span className={state.currentStep >= 2 ? 'text-blue-600' : ''}>2. Papéis (Roles)</span>
           <span>&gt;</span>
-          <span className={state.currentStep >= 4 ? 'text-blue-600' : ''}>3. Revisão</span>
+          <span className={state.currentStep >= 3 ? 'text-blue-600' : ''}>3. Listas</span>
+          <span>&gt;</span>
+          <span className={state.currentStep >= 4 ? 'text-blue-600' : ''}>4. Revisão</span>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -296,9 +306,20 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
             onPrev={prevStep}
           />
         )}
+        {state.currentStep === 3 && state.selectedTemplate && (
+          <Step3_SmartDropdowns
+            template={state.selectedTemplate}
+            groundTruth={groundTruth}
+            arraySelections={state.arraySelections}
+            onUpdateArraySelections={(selections) => dispatch({ type: 'UPDATE_ARRAY_SELECTIONS', payload: selections })}
+            onNext={nextStep}
+            onPrev={prevStep}
+          />
+        )}
         {state.currentStep === 4 && state.selectedTemplate && (
           <Step4_ReviewAndGenerate
             template={state.selectedTemplate}
+            groundTruth={groundTruth}
             finalPayload={state.finalPayload}
             onOverride={(tag, value) => dispatch({ type: 'SET_MANUAL_OVERRIDE', payload: { tag, value } })}
             onGenerate={handleGenerate}
