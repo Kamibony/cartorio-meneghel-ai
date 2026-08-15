@@ -160,7 +160,7 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
 
         // Cascade 2.5: Array selections (if any match the tag directly, e.g. "IMOVEIS" -> list of imoveis)
         // Since tags are often uppercase and array keys lowercase, do a loose check
-        const matchingArrayKey = Object.keys(state.arraySelections).find(k => k.toLowerCase() === tag.toLowerCase());
+        const matchingArrayKey = Object.keys(state.arraySelections || {}).find(k => k.toLowerCase() === tag.toLowerCase());
         if (matchingArrayKey && state.arraySelections[matchingArrayKey] && state.arraySelections[matchingArrayKey].length > 0) {
             newPayload[tag] = JSON.stringify(state.arraySelections[matchingArrayKey], null, 2);
             return;
@@ -201,7 +201,8 @@ const initWizardState = (initial: WizardState): WizardState => {
   try {
     const cached = sessionStorage.getItem('wizard_state');
     if (cached) {
-      return JSON.parse(cached);
+      const parsed = JSON.parse(cached);
+      return { ...initial, ...parsed, arraySelections: parsed.arraySelections || initial.arraySelections };
     }
   } catch (e) {
     console.error("Failed to parse wizard state from sessionStorage", e);

@@ -74,12 +74,15 @@ describe('SmartWizardContainer', () => {
     // Step 1: Select Template and move to Step 2
     fireEvent.click(screen.getByText('Select Template & Next'));
 
-    // Step 2: Select Role and move to Step 4 (Wizard skips step 3)
+    // Step 2: Select Role and move to Step 3
     expect(screen.getByTestId('step2')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Select Role'));
     fireEvent.click(screen.getByText('Next'));
 
-    // Verify that the wizard moves to step 4 because step 3 is skipped
+    // Step 3: Smart Dropdowns, just click Next
+    fireEvent.click(screen.getByText('Próximo'));
+
+    // Verify that the wizard moves to step 4
     expect(screen.getByTestId('step4')).toBeInTheDocument();
 
     // Verify the final payload has the cascaded data populated correctly
