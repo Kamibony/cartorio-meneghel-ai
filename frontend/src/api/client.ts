@@ -27,6 +27,14 @@ apiClient.interceptors.request.use(
 
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
+    // If we receive an HTML document instead of JSON (usually because of SPA fallback on missing route)
+    if (typeof response.data === 'string' && response.data.trim().toLowerCase().startsWith('<!doctype html>')) {
+      const appError: AppError = {
+        code: 'API_NOT_FOUND',
+        message: 'Endpoint da API não encontrado (Recebeu HTML ao invés de JSON). Verifique a configuração de rotas.',
+      };
+      return Promise.reject(appError);
+    }
     return response.data;
   },
   (error: AxiosError) => {
