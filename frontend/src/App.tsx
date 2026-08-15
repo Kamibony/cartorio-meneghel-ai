@@ -11,12 +11,13 @@ import TemplateManager from './components/TemplateManager';
 import GeneratorModule from './components/modules/GeneratorModule';
 import EscreventeInbox from './components/EscreventeInbox';
 import MasterDashboard from './components/MasterDashboard';
+import SmartWizardContainer from './components/SmartWizard/SmartWizardContainer';
 
 function Dashboard() {
   const { currentUser, userRole, isLoading } = useAuth();
   const [groundTruth, setGroundTruth] = useState<any>(null);
   const [initialDraftState, setInitialDraftState] = useState<any>(null);
-  const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator' | 'master_dashboard'>(userRole === 'super_admin' ? 'master_dashboard' : 'inbox');
+  const [currentView, setCurrentView] = useState<'inbox' | 'dashboard' | 'team_management' | 'template_manager' | 'minute_generator' | 'master_dashboard' | 'smart_wizard'>(userRole === 'super_admin' ? 'master_dashboard' : 'inbox');
   const [draftId, setDraftId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
 
@@ -25,9 +26,9 @@ function Dashboard() {
     const hydrateState = async () => {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view') as any;
-      if (viewParam && ['inbox', 'dashboard', 'team_management', 'template_manager', 'minute_generator', 'master_dashboard'].includes(viewParam)) {
+        if (viewParam && ['inbox', 'dashboard', 'team_management', 'template_manager', 'minute_generator', 'smart_wizard', 'master_dashboard'].includes(viewParam)) {
           setCurrentView(viewParam);
-      } else if (userRole === 'super_admin' && (!viewParam || ['inbox', 'dashboard', 'minute_generator'].includes(viewParam))) {
+        } else if (userRole === 'super_admin' && (!viewParam || ['inbox', 'dashboard', 'minute_generator', 'smart_wizard'].includes(viewParam))) {
           setCurrentView('master_dashboard');
       }
       const id = params.get('docId');
@@ -95,7 +96,7 @@ function Dashboard() {
 
   // Force current view update when role changes after hydration
   useEffect(() => {
-    if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(currentView)) {
+    if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator', 'smart_wizard'].includes(currentView)) {
       setCurrentView('master_dashboard');
       window.history.replaceState({}, '', '?view=master_dashboard');
     }
@@ -115,7 +116,7 @@ function Dashboard() {
 
   // Prevent unauthorized views from rendering for super_admin
   let activeView = currentView;
-  if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator'].includes(activeView)) {
+  if (userRole === 'super_admin' && ['inbox', 'dashboard', 'minute_generator', 'smart_wizard'].includes(activeView)) {
       activeView = 'master_dashboard';
   }
 
@@ -184,6 +185,12 @@ function Dashboard() {
                 >
                   Gerador de Minutas
                 </button>
+                <button
+                  onClick={() => handleNavClick('smart_wizard')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${currentView === 'smart_wizard' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  Arquiteto de Minutas
+                </button>
               </>
             )}
 
@@ -239,6 +246,10 @@ function Dashboard() {
           ) : activeView === 'minute_generator' ? (
             <div className="h-full overflow-auto">
               <GeneratorModule initialDraftId={draftId} initialGroundTruth={groundTruth} />
+            </div>
+          ) : activeView === 'smart_wizard' ? (
+            <div className="h-full overflow-auto">
+              <SmartWizardContainer groundTruth={groundTruth} onGenerated={(text) => console.log('Generated:', text)} />
             </div>
           ) : activeView === 'master_dashboard' ? (
             <div className="h-full overflow-auto">

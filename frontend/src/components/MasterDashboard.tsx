@@ -3,6 +3,7 @@ import { collection, query, getDocs, doc, getDoc, setDoc } from 'firebase/firest
 import { db } from '../utils/firebase';
 import TeamManagement from './TeamManagement';
 import TemplateManager from './TemplateManager';
+import AdminClauseIngestion from './AdminClauseIngestion';
 import { useAuth } from '../contexts/AuthContext';
 
 const MasterDashboard = () => {
@@ -19,6 +20,7 @@ const MasterDashboard = () => {
 
     const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
     const [viewingGlobalTemplates, setViewingGlobalTemplates] = useState(false);
+    const [viewingClauseIngestion, setViewingClauseIngestion] = useState(false);
 
     const fetchCartorios = async () => {
         setLoading(true);
@@ -127,6 +129,21 @@ const MasterDashboard = () => {
         );
     }
 
+    if (viewingClauseIngestion) {
+        return (
+            <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 h-full relative flex flex-col">
+                <div className="mb-4">
+                    <button onClick={() => setViewingClauseIngestion(false)} className="text-blue-600 hover:underline mb-2 inline-block">
+                        &larr; Voltar ao Dashboard
+                    </button>
+                </div>
+                <div className="flex-1 overflow-auto">
+                    <AdminClauseIngestion />
+                </div>
+            </div>
+        );
+    }
+
     if (selectedTenant) {
         return (
             <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 h-full relative flex flex-col">
@@ -153,6 +170,12 @@ const MasterDashboard = () => {
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">Master Dashboard (Super Admin)</h2>
                 <div className="space-x-3">
+                    <button
+                        onClick={() => setViewingClauseIngestion(true)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium"
+                    >
+                        Gestão de Cláusulas
+                    </button>
                     <button
                         onClick={() => setViewingGlobalTemplates(true)}
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow-sm text-sm font-medium"

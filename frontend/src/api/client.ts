@@ -69,4 +69,14 @@ apiClient.interceptors.response.use(
   }
 );
 
+export const ingestRawClauses = async (rawText: string) => {
+  const url = import.meta.env.VITE_INGEST_API_URL || '/api/ingest_raw_clauses';
+  // Strip trailing slash if any
+  const cleanUrl = url.replace(/\/$/, "");
+
+  // Use apiClient which has all the interceptors
+  const response = await apiClient.post(cleanUrl, { raw_text: rawText });
+  return response;
+};
+
 export default apiClient;
