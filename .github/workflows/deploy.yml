@@ -55,7 +55,7 @@ jobs:
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
         run: |
-          firebase deploy --only functions,firestore:rules,storage --force --project "$FIREBASE_PROJECT_ID"
+          firebase deploy --only functions,firestore:rules,firestore:indexes,storage --force --project "$FIREBASE_PROJECT_ID"
 
   deploy-frontend:
     runs-on: ubuntu-latest
