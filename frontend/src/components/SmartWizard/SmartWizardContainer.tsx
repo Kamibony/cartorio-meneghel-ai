@@ -104,31 +104,49 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       const sourceData = groundTruth?.human_final_data || groundTruth?.ai_extracted_data || groundTruth || {};
       const newPayload: Record<string, string> = {};
 
+      // Cascade 2: Role selections (Role-first loop)
+      if (state.selectedTemplate?.roles_schema) {
+        for (const roleSchema of state.selectedTemplate.roles_schema) {
+          const roleName = roleSchema.role;
+          const selectedEntity = state.roleSelections[roleName];
+          if (selectedEntity) {
+            const mapping = roleSchema.mapping;
+            for (const [entityAttr, mappedTag] of Object.entries(mapping)) {
+              const val = getValueFromEntity(selectedEntity, entityAttr);
+              if (typeof mappedTag === 'string' && val !== null && val !== undefined && val !== '') {
+                // Find matching required tag (case-insensitive)
+                const matchingTag = state.selectedTemplate.required_tags.find(
+                  (t) => t.trim().toLowerCase() === mappedTag.trim().toLowerCase()
+                );
+                if (matchingTag) {
+                  // Accumulate values if multiple roles map to the same tag (e.g., merging multiple entities)
+                  const strVal = typeof val === 'string' ? val : JSON.stringify(val);
+                  if (matchingTag in newPayload) {
+                     // If it's already there, append it (or arrayify it) so we don't lose the first role's data
+                     // Since the payload expects strings, let's join with a newline or comma
+                     if (newPayload[matchingTag] !== strVal) {
+                       newPayload[matchingTag] = newPayload[matchingTag] + '\n' + strVal;
+                     }
+                  } else {
+                     newPayload[matchingTag] = strVal;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       state.selectedTemplate.required_tags.forEach((tag) => {
-        // Cascade 1: Manual overrides
+        // Cascade 1: Manual overrides (take precedence over everything, even role selections)
         if (tag in state.manualOverrides) {
           newPayload[tag] = state.manualOverrides[tag];
           return;
         }
 
-        // Cascade 2: Role selections
-        if (state.selectedTemplate?.roles_schema) {
-          for (const roleSchema of state.selectedTemplate.roles_schema) {
-            const roleName = roleSchema.role;
-            const selectedEntity = state.roleSelections[roleName];
-            if (selectedEntity) {
-              const mapping = roleSchema.mapping;
-              for (const [entityAttr, mappedTag] of Object.entries(mapping)) {
-                const val = getValueFromEntity(selectedEntity, entityAttr);
-                if (typeof mappedTag === 'string' && typeof tag === 'string' && mappedTag.trim().toLowerCase() === tag.trim().toLowerCase() && val !== null && val !== undefined && val !== '') {
-                  newPayload[tag] = typeof val === 'string'
-                    ? val
-                    : JSON.stringify(val);
-                  return; // Break out of cascade for this tag
-                }
-              }
-            }
-          }
+        // If tag was already populated by role selections, keep it and skip fallback
+        if (tag in newPayload) {
+          return;
         }
 
         // Cascade 3: Raw verified_data (Fallback)
