@@ -64,6 +64,22 @@
         "function": "reactivateEmployeeAccess"
       },
       {
+        "source": "/api/ingest_raw_clauses",
+        "function": "ingest_raw_clauses"
+      },
+      {
+        "source": "/api/log_hitl_resolution",
+        "function": "log_hitl_resolution"
+      },
+      {
+        "source": "/api/generate_document_api",
+        "function": "generate_document_api"
+      },
+      {
+        "source": "/api/suggest_field_text",
+        "function": "suggest_field_text"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
