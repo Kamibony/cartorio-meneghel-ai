@@ -84,9 +84,11 @@ jobs:
         run: |
           EXTRACT_URL=$(gcloud run services describe extract-document-data --region us-central1 --project "$FIREBASE_PROJECT_ID" --format 'value(status.url)' || echo "")
           GENERATE_URL=$(gcloud run services describe generate-document-api --region us-central1 --project "$FIREBASE_PROJECT_ID" --format 'value(status.url)' || echo "")
+          ORCHESTRATE_URL=$(gcloud run services describe orchestrate-document --region us-central1 --project "$FIREBASE_PROJECT_ID" --format 'value(status.url)' || echo "")
 
           echo "EXTRACT_URL=$EXTRACT_URL" >> $GITHUB_ENV
           echo "GENERATE_URL=$GENERATE_URL" >> $GITHUB_ENV
+          echo "ORCHESTRATE_URL=$ORCHESTRATE_URL" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: ./frontend
@@ -105,6 +107,7 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           VITE_EXTRACT_API_URL: ${{ env.EXTRACT_URL }}
           VITE_GENERATE_API_URL: ${{ env.GENERATE_URL }}
+          VITE_ORCHESTRATE_API_URL: ${{ env.ORCHESTRATE_URL }}
         run: npm run build
 
       - name: Deploy to Firebase Hosting
