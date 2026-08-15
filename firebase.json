@@ -80,6 +80,10 @@
         "function": "suggest_field_text"
       },
       {
+        "source": "/api/orchestrate_document",
+        "function": "orchestrate_document"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

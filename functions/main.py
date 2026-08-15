@@ -350,7 +350,7 @@ def finalize_validation(req: https_fn.Request) -> https_fn.Response:
         return https_fn.Response(json.dumps({"error": str(e)}), status=500)
 
 
-@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=120)
 def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
     """
     Tracer bullet endpoint for Phase 2 (Orchestrator).
