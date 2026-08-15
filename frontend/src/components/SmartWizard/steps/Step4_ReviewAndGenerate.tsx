@@ -1,7 +1,9 @@
 import React from 'react';
+import AIContextualTextarea from '../components/AIContextualTextarea';
 
 interface Props {
   template: any;
+  groundTruth?: any;
   finalPayload: Record<string, string>;
   onOverride: (tag: string, value: string) => void;
   onGenerate: () => void;
@@ -15,7 +17,8 @@ interface Props {
 
 const Step4_ReviewAndGenerate: React.FC<Props> = ({
     template, finalPayload, onOverride, onGenerate,
-    isGenerating, error, generatedText, generatedFileUrl, onForwardToValidation, onPrev
+    isGenerating, error, generatedText, generatedFileUrl, onForwardToValidation, onPrev,
+    groundTruth
 }) => {
 
   const requiredTags = template.required_tags || [];
@@ -42,12 +45,11 @@ const Step4_ReviewAndGenerate: React.FC<Props> = ({
                                   placeholder={`Valor exato para ${tag}`}
                               />
                           ) : (
-                              <textarea
-                                  value={finalPayload[tag] || ''}
-                                  onChange={(e) => onOverride(tag, e.target.value)}
-                                  rows={2}
-                                  className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs px-2 py-1.5 border"
-                                  placeholder={`Descreva os dados para: ${tag}`}
+                              <AIContextualTextarea
+                                tag={tag}
+                                value={finalPayload[tag] || ''}
+                                onChange={(val) => onOverride(tag, val)}
+                                groundTruth={groundTruth}
                               />
                           )}
                       </div>

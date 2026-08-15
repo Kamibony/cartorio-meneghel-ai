@@ -1106,3 +1106,55 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
             status=500,
             content_type="application/json"
         )
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def suggest_field_text(req: https_fn.Request) -> https_fn.Response:
+    """
+    Suggests text for a specific form field using LLM and context data.
+    Accepts REST payload: {"cartorio_id": "...", "tag": "...", "context_data": {...}}
+    """
+    if req.method != "POST":
+        return https_fn.Response(json.dumps({"error": {"code": "METHOD_NOT_ALLOWED", "message": "Method not allowed"}}), status=405, content_type="application/json")
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(json.dumps({"error": {"code": "UNAUTHENTICATED", "message": "Unauthenticated"}}), status=401, content_type="application/json")
+
+    token = auth_header.split("Bearer ")[1]
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import auth, firestore
+
+        try:
+            decoded_token = auth.verify_id_token(token)
+            user_role = decoded_token.get("role")
+            user_cartorio = decoded_token.get("cartorio_id")
+        except Exception as e:
+            return https_fn.Response(json.dumps({"error": {"code": "UNAUTHENTICATED", "message": "Invalid token"}}), status=401, content_type="application/json")
+
+        try:
+            req_data = req.get_json(silent=True) or {}
+            cartorio_id = req_data.get("cartorio_id")
+            tag = req_data.get("tag")
+            context_data = req_data.get("context_data")
+
+            if not cartorio_id or not tag or context_data is None:
+                return https_fn.Response(json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": "Missing required fields"}}), status=400, content_type="application/json")
+
+            if user_role != "super_admin" and cartorio_id != user_cartorio:
+                return https_fn.Response(json.dumps({"error": {"code": "PERMISSION_DENIED", "message": "Tenant mismatch"}}), status=403, content_type="application/json")
+
+            from core.generator import suggest_field_text_llm
+            suggestion = suggest_field_text_llm(tag, context_data)
+
+            return https_fn.Response(json.dumps({"status": "success", "suggestion": suggestion}), status=200, content_type="application/json")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return https_fn.Response(json.dumps({"error": {"code": "INTERNAL", "message": f"Server error: {str(e)}"}}), status=500, content_type="application/json")
+
+    except Exception as e:
+        return https_fn.Response(json.dumps({"error": {"code": "INTERNAL", "message": "Initialization error"}}), status=500, content_type="application/json")

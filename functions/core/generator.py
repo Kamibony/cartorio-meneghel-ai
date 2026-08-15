@@ -162,3 +162,34 @@ Analyze the prefixes, suffixes, and patterns in the tags to deduce the roles. Fo
     except Exception as e:
         logger.error(f"Error calling LLM to generate roles schema: {e}")
         return []
+
+def suggest_field_text_llm(tag: str, context_data: dict) -> str:
+    """
+    Uses the LLM to auto-suggest a text snippet for a specific form field (tag),
+    given the available contextual data.
+    """
+    try:
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+
+        prompt = f"""
+You are an expert legal assistant for a Brazilian Cartório.
+Your task is to provide an auto-suggestion for a specific text field in a legal document based on the available context.
+
+Field Tag: {tag}
+
+Context Data (JSON):
+{json.dumps(context_data, ensure_ascii=False, indent=2)}
+
+Please write a concise, formal, and grammatically correct text snippet suitable for insertion into a document draft.
+Output ONLY the suggested text, nothing else. Do not include markdown blocks or introductory phrases.
+"""
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Error suggesting field text: {e}")
+        raise e
