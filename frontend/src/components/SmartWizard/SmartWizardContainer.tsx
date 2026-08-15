@@ -1,4 +1,5 @@
 import React, { useReducer, useEffect } from 'react';
+import Step0_IntentDefinition from './steps/Step0_IntentDefinition';
 import Step1_TemplateSelection from './steps/Step1_TemplateSelection';
 import Step2_RoleMapping from './steps/Step2_RoleMapping';
 import Step3_SmartDropdowns from './steps/Step3_SmartDropdowns';
@@ -43,7 +44,7 @@ type WizardAction =
   | { type: 'RESET' };
 
 const initialState: WizardState = {
-  currentStep: 1,
+  currentStep: 0,
   selectedTemplate: null,
   roleSelections: {},
   arraySelections: {},
@@ -279,7 +280,9 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
 
   return (
     <div className="flex flex-col h-full bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden p-4">
-      <div className="mb-4 flex space-x-2 text-xs font-semibold text-gray-500">
+      <div className="mb-4 flex space-x-2 text-xs font-semibold text-gray-500 overflow-x-auto whitespace-nowrap pb-1">
+          <span className={state.currentStep >= 0 ? 'text-blue-600' : ''}>0. Intenção</span>
+          <span>&gt;</span>
           <span className={state.currentStep >= 1 ? 'text-blue-600' : ''}>1. Template</span>
           <span>&gt;</span>
           <span className={state.currentStep >= 2 ? 'text-blue-600' : ''}>2. Papéis (Roles)</span>
@@ -290,6 +293,9 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {state.currentStep === 0 && (
+          <Step0_IntentDefinition onNext={nextStep} />
+        )}
         {state.currentStep === 1 && (
           <Step1_TemplateSelection
             selectedTemplateId={state.selectedTemplate?.id || ''}

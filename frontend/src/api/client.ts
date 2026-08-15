@@ -87,4 +87,12 @@ export const ingestRawClauses = async (rawText: string) => {
   return response;
 };
 
+export const orchestrateDocument = async (intent: string) => {
+  const url = import.meta.env.VITE_ORCHESTRATE_API_URL || '/api/orchestrate_document';
+  const cleanUrl = url.replace(/\/$/, "");
+
+  const response = await apiClient.post(cleanUrl, { intent });
+  return response;
+};
+
 export default apiClient;

@@ -351,6 +351,24 @@ def finalize_validation(req: https_fn.Request) -> https_fn.Response:
 
 
 @https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
+def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
+    """
+    Tracer bullet endpoint for Phase 2 (Orchestrator).
+    Returns a hardcoded JSON response for now.
+    """
+    if req.method != "POST":
+        return https_fn.Response(json.dumps({"error": "Method not allowed"}), status=405)
+
+    return https_fn.Response(
+        json.dumps({
+            "selected_clause_ids": ["test_id_1"],
+            "reasoning": "Tracer bullet test"
+        }),
+        status=200,
+        content_type="application/json"
+    )
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_256)
 def api_status(req: https_fn.Request) -> https_fn.Response:
     """Returns the API status."""
     return https_fn.Response(
