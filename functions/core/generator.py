@@ -163,6 +163,92 @@ Analyze the prefixes, suffixes, and patterns in the tags to deduce the roles. Fo
         logger.error(f"Error calling LLM to generate roles schema: {e}")
         return []
 
+def vectorize_text(text: str) -> list:
+    """
+    Generates vector embeddings for a given text using Vertex AI.
+    """
+    try:
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+
+        # Using text-embedding-004 model
+        response = client.models.embed_content(
+            model="text-embedding-004",
+            contents=text,
+        )
+        # Handle response structure correctly. It returns an EmbedContentResponse.
+        # Check if embeddings exists. The actual attribute might differ based on SDK version.
+        if hasattr(response, 'embeddings') and response.embeddings:
+             return response.embeddings[0].values
+
+        # Fallback for some SDK versions where it might be structured differently
+        logger.error(f"Failed to get embeddings from response. Response structure: {response}")
+        return []
+
+    except Exception as e:
+        logger.error(f"Error vectorizing text: {e}")
+        return []
+
+def parse_clause_with_llm(raw_text: str) -> dict:
+    """
+    Analyzes raw legal text, breaks it down into logical clauses, extracts text,
+    replaces entity names with standardized namespaced variables, and defines those variables.
+    """
+    try:
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
+        location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+
+        from pydantic import BaseModel, Field
+        from typing import List
+
+        class VariableDefinition(BaseModel):
+            name: str = Field(description="Variable name, e.g., 'OUTORGANTE_NOME', 'PLACA_VEICULO'")
+            type: str = Field(description="One of 'string', 'number', 'date', 'entity', 'asset'")
+            description: str = Field(description="Context, e.g., 'Nome completo do outorgante'")
+            role: str = Field(default="", description="Logical role, e.g., 'Outorgante'")
+
+        class ClauseDefinition(BaseModel):
+            title: str = Field(description="Human-readable title, e.g., 'Poderes para Venda'")
+            text: str = Field(description="Legal text with Jinja2 tags, e.g., 'O(A) outorgante {{OUTORGANTE_NOME}}...'")
+            required_variables: List[VariableDefinition] = Field(description="List of required variables")
+            scope_tags: List[str] = Field(description="Tags like 'procuracao', 'venda'")
+
+        class ClauseList(BaseModel):
+            clauses: List[ClauseDefinition]
+
+        prompt = f"""
+You are an expert legal engineer for a Brazilian Cartório. Analyze the following raw legal document text.
+Break it down into logical, independent clauses. For each clause:
+1. Extract the core legal text.
+2. Replace specific entity names or details (like a person's name or a car's license plate) with standardized, STRICTLY NAMESPACED Jinja2 variables.
+   - Example: Instead of generic `{{{{NOME}}}}`, use `{{{{OUTORGANTE_NOME}}}}` or `{{{{COMPRADOR_NOME}}}}`.
+   - This strict namespacing is critical to prevent deduplication collisions later.
+3. Define these variables with their expected type ('entity', 'asset', 'string', 'number', 'date').
+
+Raw Legal Text:
+{raw_text}
+"""
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=ClauseList,
+                temperature=0.0
+            ),
+        )
+
+        parsed_response = json.loads(response.text)
+        return parsed_response
+
+    except Exception as e:
+        logger.error(f"Error parsing clauses with LLM: {e}")
+        return {}
+
+
 def suggest_field_text_llm(tag: str, context_data: dict) -> str:
     """
     Uses the LLM to auto-suggest a text snippet for a specific form field (tag),
