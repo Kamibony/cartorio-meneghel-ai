@@ -162,8 +162,24 @@ interface SmartWizardContainerProps {
   onGenerated: (text: string) => void;
 }
 
+const initWizardState = (initial: WizardState): WizardState => {
+  try {
+    const cached = sessionStorage.getItem('wizard_state');
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.error("Failed to parse wizard state from sessionStorage", e);
+  }
+  return initial;
+};
+
 const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth, onGenerated }) => {
-  const [state, dispatch] = useReducer(wizardReducer, initialState);
+  const [state, dispatch] = useReducer(wizardReducer, initialState, initWizardState);
+
+  useEffect(() => {
+    sessionStorage.setItem('wizard_state', JSON.stringify(state));
+  }, [state]);
   const { cartorioId } = useAuth();
 
   // Re-compute payload when roles or overrides change

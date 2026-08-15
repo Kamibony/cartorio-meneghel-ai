@@ -11,12 +11,27 @@ interface GeneratorModuleProps {
 }
 
 const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initialGroundTruth }) => {
-    const [draftId, setDraftId] = useState<string | null>(initialDraftId || null);
-    const [groundTruth, setGroundTruth] = useState<any>(initialGroundTruth || null);
+    const [draftId, setDraftId] = useState<string | null>(() => {
+        if (initialDraftId) return initialDraftId;
+        const cached = sessionStorage.getItem('generator_draftId');
+        return cached ? cached : null;
+    });
+    const [groundTruth, setGroundTruth] = useState<any>(() => {
+        if (initialGroundTruth) return initialGroundTruth;
+        const cached = sessionStorage.getItem('generator_groundTruth');
+        return cached ? JSON.parse(cached) : null;
+    });
 
     // Extraction Review States
-    const [resolvedGroundTruth, setResolvedGroundTruth] = useState<any>(initialGroundTruth ? JSON.parse(JSON.stringify(initialGroundTruth)) : null);
-    const [hasAcknowledgedGroundTruth, setHasAcknowledgedGroundTruth] = useState<boolean>(false);
+    const [resolvedGroundTruth, setResolvedGroundTruth] = useState<any>(() => {
+        if (initialGroundTruth) return JSON.parse(JSON.stringify(initialGroundTruth));
+        const cached = sessionStorage.getItem('generator_resolvedGroundTruth');
+        return cached ? JSON.parse(cached) : null;
+    });
+    const [hasAcknowledgedGroundTruth, setHasAcknowledgedGroundTruth] = useState<boolean>(() => {
+        const cached = sessionStorage.getItem('generator_hasAcknowledgedGroundTruth');
+        return cached ? JSON.parse(cached) : false;
+    });
 
     // Generator & Validation States
     const [draftText, setDraftText] = useState<string>(''); // Received from TemplateGeneratorInput
@@ -32,6 +47,26 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
     React.useEffect(() => {
         setResolvedGroundTruth(groundTruth ? JSON.parse(JSON.stringify(groundTruth)) : null);
     }, [groundTruth]);
+    // Persist state to sessionStorage
+    React.useEffect(() => {
+        if (draftId) sessionStorage.setItem('generator_draftId', draftId);
+        else sessionStorage.removeItem('generator_draftId');
+    }, [draftId]);
+
+    React.useEffect(() => {
+        if (groundTruth) sessionStorage.setItem('generator_groundTruth', JSON.stringify(groundTruth));
+        else sessionStorage.removeItem('generator_groundTruth');
+    }, [groundTruth]);
+
+    React.useEffect(() => {
+        if (resolvedGroundTruth) sessionStorage.setItem('generator_resolvedGroundTruth', JSON.stringify(resolvedGroundTruth));
+        else sessionStorage.removeItem('generator_resolvedGroundTruth');
+    }, [resolvedGroundTruth]);
+
+    React.useEffect(() => {
+        sessionStorage.setItem('generator_hasAcknowledgedGroundTruth', JSON.stringify(hasAcknowledgedGroundTruth));
+    }, [hasAcknowledgedGroundTruth]);
+
 
     const hasUnresolvedConflicts = () => {
         if (!resolvedGroundTruth || !resolvedGroundTruth.entities) return false;
