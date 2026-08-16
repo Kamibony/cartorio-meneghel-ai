@@ -114,19 +114,58 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
     if (state.orchestratorResponse?.required_variables && groundTruth) {
       const newFormData: Record<string, string> = {};
       let hasChanges = false;
+
+      const extractFlatValue = (data: any, searchTag: string): string | null => {
+        if (!data) return null;
+        if (typeof data[searchTag] === 'string') return data[searchTag];
+        if (data._contexto_extraido && typeof data._contexto_extraido[searchTag] === 'string') return data._contexto_extraido[searchTag];
+
+        const lowerTag = searchTag.toLowerCase();
+        const searchEntities = (entities: any[]) => {
+            if (!Array.isArray(entities)) return null;
+            for (const entity of entities) {
+                const roleMatch = lowerTag.split('_')[0];
+                const roleMatches = (entity.role || '').toLowerCase() === roleMatch ||
+                                    (entity.logical_role || '').toLowerCase() === roleMatch;
+
+                if (roleMatches || !entity.role) {
+                    if (lowerTag.includes('nome') || lowerTag.includes('razao_social')) {
+                        const name = entity.entity_name || entity.nome || entity.razao_social || entity.nome_fantasia || entity.name;
+                        if (name && typeof name === 'string' && name.trim() !== '') return name.trim();
+                    }
+
+                    if (Array.isArray(entity.attributes)) {
+                        for (const attr of entity.attributes) {
+                            if (attr.key && lowerTag.includes(attr.key.toLowerCase())) {
+                                if (attr.value && typeof attr.value === 'string' && attr.value.trim() !== '') return attr.value.trim();
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+
+        let res = searchEntities(data.entities);
+        if (res) return res;
+
+        if (data._contexto_extraido) {
+            res = searchEntities(data._contexto_extraido.entities);
+            if (res) return res;
+        }
+
+        return null;
+      };
+
       state.orchestratorResponse.required_variables.forEach((variable: any) => {
         const tag = variable.name;
         if (state.clauseFormData[tag] === undefined) {
-          if (groundTruth[tag] !== undefined) {
-             newFormData[tag] = typeof groundTruth[tag] === 'string' ? groundTruth[tag] : JSON.stringify(groundTruth[tag], null, 2);
-          } else if (groundTruth._contexto_extraido && groundTruth._contexto_extraido[tag] !== undefined) {
-             newFormData[tag] = typeof groundTruth._contexto_extraido[tag] === 'string' ? groundTruth._contexto_extraido[tag] : JSON.stringify(groundTruth._contexto_extraido[tag], null, 2);
-          } else {
-             newFormData[tag] = JSON.stringify(groundTruth, null, 2);
-          }
+          const extracted = extractFlatValue(groundTruth, tag);
+          newFormData[tag] = extracted !== null ? extracted : "";
           hasChanges = true;
         }
       });
+
       if (hasChanges) {
         dispatch({ type: 'AUTOFILL_CLAUSE_FORM_DATA', payload: newFormData });
       }
