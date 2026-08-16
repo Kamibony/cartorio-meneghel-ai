@@ -242,8 +242,8 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       const endpoint = `${ENV.generateApiUrl}/preview_dynamic_document`;
       const result: any = await apiClient.post(endpoint, payload);
 
-      if (result.status === 'success' && result.text) {
-          dispatch({ type: 'PREVIEW_SUCCESS', payload: result.text });
+      if (result.status === 'success' && result.preview_text !== undefined) {
+          dispatch({ type: 'PREVIEW_SUCCESS', payload: result.preview_text });
       } else {
           throw new Error("Resposta inválida do servidor.");
       }
