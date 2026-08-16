@@ -116,6 +116,27 @@ const initWizardState = (initial: WizardState): WizardState => {
 };
 
 const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth, onGenerated }) => {
+  // Inject stable unique IDs into groundTruth entities if they are missing
+  const normalizedGroundTruth = React.useMemo(() => {
+    if (!groundTruth) return groundTruth;
+
+    let cloned = JSON.parse(JSON.stringify(groundTruth));
+    const processEntities = (entities: any[]) => {
+      if (!Array.isArray(entities)) return;
+      entities.forEach((entity, index) => {
+        if (!entity.id) {
+          const entityName = entity.nome || entity.razao_social || entity.name || entity.entity_name;
+          entity.id = entityName || `ent_idx_${index}`;
+        }
+      });
+    };
+
+    if (cloned.entities) processEntities(cloned.entities);
+    if (cloned._contexto_extraido?.entities) processEntities(cloned._contexto_extraido.entities);
+
+    return cloned;
+  }, [groundTruth]);
+
   const [state, dispatch] = useReducer(wizardReducer, initialState, initWizardState);
 
   useEffect(() => {
@@ -123,7 +144,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
   }, [state]);
 
   useEffect(() => {
-    if (state.orchestratorResponse?.required_variables && groundTruth) {
+    if (state.orchestratorResponse?.required_variables && normalizedGroundTruth) {
       const newFormData: Record<string, string> = {};
       let hasChanges = false;
 
@@ -140,7 +161,17 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
                 const roleMatches = (entity.role || '').toLowerCase() === roleMatch ||
                                     (entity.logical_role || '').toLowerCase() === roleMatch;
 
-                if (roleMatches || !entity.role) {
+                let isValidFallback = false;
+                if (!entity.role && !roleMatches) {
+                    isValidFallback = true;
+                    // Semantic constraint: if looking for a bank, don't fallback to a physical person
+                    if (roleMatch.includes('banco') && (entity.entity_type === 'PESSOA_FISICA' || entity.cpf)) {
+                        isValidFallback = false;
+                    }
+                    // Add more semantic constraints here as needed
+                }
+
+                if (roleMatches || isValidFallback) {
                     if (lowerTag.includes('nome') || lowerTag.includes('razao_social')) {
                         const name = entity.entity_name || entity.nome || entity.razao_social || entity.nome_fantasia || entity.name;
                         if (name && typeof name === 'string' && name.trim() !== '') return name.trim();
@@ -172,7 +203,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       state.orchestratorResponse.required_variables.forEach((variable: any) => {
         const tag = variable.name;
         if (state.clauseFormData[tag] === undefined) {
-          const extracted = extractFlatValue(groundTruth, tag);
+          const extracted = extractFlatValue(normalizedGroundTruth, tag);
           newFormData[tag] = extracted !== null ? extracted : "";
           hasChanges = true;
         }
@@ -182,7 +213,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         dispatch({ type: 'AUTOFILL_CLAUSE_FORM_DATA', payload: newFormData });
       }
     }
-  }, [state.orchestratorResponse, groundTruth, state.clauseFormData]);
+  }, [state.orchestratorResponse, normalizedGroundTruth, state.clauseFormData]);
   const { cartorioId } = useAuth();
 
   const handleGenerate = async () => {
@@ -198,10 +229,10 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         verified_data: state.clauseFormData,
         role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
-        draft_id: groundTruth?.document_id || null,
-        imported_at: groundTruth?.updatedAt ? {
-             _seconds: groundTruth.updatedAt.seconds,
-             _nanoseconds: groundTruth.updatedAt.nanoseconds
+        draft_id: normalizedGroundTruth?.document_id || null,
+        imported_at: normalizedGroundTruth?.updatedAt ? {
+             _seconds: normalizedGroundTruth.updatedAt.seconds,
+             _nanoseconds: normalizedGroundTruth.updatedAt.nanoseconds
          } : null
       };
 
@@ -255,7 +286,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       <div className="flex-1 overflow-y-auto">
         {state.currentStep === 0 && (
           <Step0_IntentDefinition
-             groundTruth={groundTruth}
+             groundTruth={normalizedGroundTruth}
              onOrchestrated={(res) => {
                  dispatch({ type: 'SET_ORCHESTRATOR_RESPONSE', payload: res });
                  nextStep();
@@ -274,7 +305,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
             requiredVariables={state.orchestratorResponse?.required_variables || []}
             roleMapping={state.roleMapping}
             onRoleMappingChange={(role, entityIds) => dispatch({ type: 'UPDATE_ROLE_MAPPING', payload: { role, entityIds } })}
-            groundTruth={groundTruth}
+            groundTruth={normalizedGroundTruth}
             finalPayload={state.clauseFormData}
             onOverride={(tag, value) => dispatch({ type: 'UPDATE_CLAUSE_FORM_DATA', payload: { tag, value } })}
             onGenerate={handleGenerate}
