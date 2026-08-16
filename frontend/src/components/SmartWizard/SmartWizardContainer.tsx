@@ -228,10 +228,15 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
 
       const payload = {
         cartorio_id: cartorioId,
+        template_id: "DYNAMIC_CLAUSES",
         verified_data: state.clauseFormData,
         role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
-        draft_id: normalizedGroundTruth?.document_id || null
+        draft_id: normalizedGroundTruth?.document_id || null,
+        imported_at: normalizedGroundTruth?.updatedAt ? {
+             _seconds: normalizedGroundTruth.updatedAt.seconds,
+             _nanoseconds: normalizedGroundTruth.updatedAt.nanoseconds
+         } : null
       };
 
       const endpoint = `${ENV.generateApiUrl}/preview_dynamic_document`;
