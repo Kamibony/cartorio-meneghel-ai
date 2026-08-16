@@ -1,19 +1,5 @@
 {
-  "indexes": [
-    {
-      "collectionGroup": "clauses",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "embedding",
-          "vectorConfig": {
-            "dimension": 768,
-            "flat": {}
-          }
-        }
-      ]
-    }
-  ],
+  "indexes": [],
   "fieldOverrides": [
     {
       "collectionGroup": "clauses",
@@ -30,12 +16,6 @@
         {
           "arrayConfig": "CONTAINS",
           "queryScope": "COLLECTION"
-        },
-        {
-          "vectorConfig": {
-            "dimension": 768,
-            "flat": {}
-          }
         }
       ]
     }
