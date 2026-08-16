@@ -281,114 +281,37 @@ Output ONLY the suggested text, nothing else. Do not include markdown blocks or 
         logger.error(f"Error suggesting field text: {e}")
         raise e
 
-def assemble_dynamic_document(selected_clause_ids: list, verified_data: dict, db) -> bytes:
+def assemble_dynamic_document(selected_clause_ids: list, role_mapping: dict, ground_truth: dict, verified_data: dict, db) -> bytes:
     """
-    Assembles a document dynamically from a list of clause IDs and user-verified data.
-    Uses LLM to map complex JSON verified_data to flat string variables.
+    Assembles a document dynamically from a list of clause IDs deterministically, bypassing the LLM.
     """
     try:
-        import re
-        import os
-        import json
-        from google import genai
-        from google.genai import types
-        from core.config import GEMINI_MODEL
-        document = Document()
+        from core.resolver import DocumentResolver
+        resolver = DocumentResolver()
 
-        # Need a default/base title
-        document.add_heading('MINUTA GERADA', 0)
+        from docx import Document
+        import io
 
+        # We handle empty list edge case manually here to return empty docx as it did before.
         if not selected_clause_ids:
+            document = Document()
+            document.add_heading('MINUTA GERADA', 0)
             document.add_paragraph("Nenhuma cláusula selecionada para este documento.")
             out_f = io.BytesIO()
             document.save(out_f)
             return out_f.getvalue()
 
         clauses = []
-        all_required_variables = {}
-
         for clause_id in selected_clause_ids:
             clause_doc = db.collection("clauses").document(clause_id).get()
             if not clause_doc.exists:
                 logger.warning(f"Clause {clause_id} not found during document generation.")
                 continue
 
-            clause_data = clause_doc.to_dict()
-            clauses.append(clause_data)
+            clauses.append(clause_doc.to_dict())
 
-            # Explicit required variables
-            for var in clause_data.get("required_variables", []):
-                var_name = var.get("name")
-                if var_name:
-                    all_required_variables[var_name] = var
+        return resolver.assemble(clauses, role_mapping, ground_truth, verified_data)
 
-            # Implicit variables from text
-            text = clause_data.get("text", "")
-            found_tags = re.findall(r"\{\{([A-Za-z0-9_]+)\}\}", text)
-            for tag in found_tags:
-                if tag not in all_required_variables:
-                    all_required_variables[tag] = {"name": tag, "description": f"Value for {tag}"}
-
-        payload = {}
-        if all_required_variables:
-            project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
-            location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
-            client = genai.Client(vertexai=True, project=project_id, location=location)
-
-            from pydantic import create_model, Field
-            fields = {
-                var_name: (str, Field(description=f"Extract or format value for {var_name}. Context: {var.get('description', '')}. Role: {var.get('role', '')}"))
-                for var_name, var in all_required_variables.items()
-            }
-            DynamicSchema = create_model('DynamicSchema', **fields)
-
-            prompt = f"""
-You are a strict data extraction and formatting engine for a Brazilian Cartório.
-Your task is to extract specific flat text values from the raw, verified JSON data to fill in required template variables.
-
-Rules:
-1. Extract the exact value requested. Do NOT output raw JSON objects or lists. If a field contains a complex object, extract the relevant string (e.g., entity name, CPF, or document number) that fits the variable description.
-2. Ensure perfect gender agreement and pluralization where applicable in Portuguese.
-3. If a required field is completely missing from the JSON data, output "[DADO FALTANTE]".
-4. Only output the final string values.
-
-<VERIFIED_JSON_DATA>
-{json.dumps(verified_data, ensure_ascii=False, indent=2)}
-</VERIFIED_JSON_DATA>
-"""
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    response_mime_type="application/json",
-                    response_schema=DynamicSchema,
-                )
-            )
-
-            payload = json.loads(response.text.strip())
-
-        for clause_data in clauses:
-            title = clause_data.get("title", "")
-            text = clause_data.get("text", "")
-
-            if title:
-                document.add_heading(title, level=1)
-
-            # Inject variables into text
-            for key, val in payload.items():
-                text = text.replace(f"{{{{{key}}}}}", str(val))
-
-            # Fallback for remaining flat keys in verified_data
-            for key, val in verified_data.items():
-                if not isinstance(val, (dict, list)):
-                    text = text.replace(f"{{{{{key}}}}}", str(val))
-
-            document.add_paragraph(text)
-
-        out_f = io.BytesIO()
-        document.save(out_f)
-        return out_f.getvalue()
     except Exception as e:
         logger.error(f"Error assembling dynamic document: {e}")
         raise ValueError(f"Failed to assemble dynamic document: {str(e)}")
