@@ -67,10 +67,10 @@ def extract_batch_document_data(req: https_fn.Request) -> https_fn.Response:
         )
 
     try:
-        data = req.get_json()
+        data = req.get_json(silent=True)
         if not data:
             return https_fn.Response(
-                json.dumps({"error": "Missing JSON payload"}),
+                json.dumps({"error": "Missing or malformed JSON payload"}),
                 status=400,
                 content_type="application/json"
             )
@@ -572,8 +572,15 @@ def format_draft(req: https_fn.Request) -> https_fn.Response:
                 content_type="application/json"
             )
 
-        raw_text = data.get("raw_text", "")
-        ground_truth = data.get("ground_truth", {})
+        raw_text = data.get("raw_text")
+        ground_truth = data.get("ground_truth")
+
+        if not raw_text or ground_truth is None:
+             return https_fn.Response(
+                json.dumps({"error": "Missing required fields: raw_text or ground_truth"}),
+                status=400,
+                content_type="application/json"
+            )
 
         if not isinstance(raw_text, str) or not isinstance(ground_truth, dict):
             return https_fn.Response(
@@ -1220,7 +1227,11 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
         data = req.get_json(silent=True)
 
         if not data:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing JSON payload")
+            return https_fn.Response(
+                json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": "Missing or malformed JSON payload"}}),
+                status=400,
+                content_type="application/json"
+            )
 
         cartorio_id = data.get("cartorio_id")
         user_role = user_data.get('role')
