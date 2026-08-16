@@ -444,6 +444,7 @@ Below is a list of candidate clauses retrieved from our legal database:
 
 Your task is to select the optimal clauses from the candidates to fulfill the user's intent.
 Sequence them in the correct logical order for a legal document.
+ALWAYS start the sequence with a Preamble/Qualification clause (e.g., "Qualificação") that qualifies the involved parties (e.g., Outorgante and Outorgada) before listing the specific clauses.
 Do NOT invent new clauses. Only select from the provided candidates.
 """
 
