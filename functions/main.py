@@ -455,6 +455,7 @@ Your task is twofold:
    Return this mapping in the `role_mapping` field.
    The keys should be the logical abstract roles.
    The values should be an ARRAY of the entity IDs that belong to that role.
+   IMPORTANT: You MUST use ONLY the exact `id` string (e.g., 'ent_123') in the `role_mapping` JSON. NEVER use the entity's name.
 """
 
         from pydantic import BaseModel, Field
