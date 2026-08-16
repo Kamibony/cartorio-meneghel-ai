@@ -14,6 +14,10 @@ class DocumentResolver:
         for ent in entities:
             if ent.get("id") == entity_id:
                 return ent
+            # Fallback to matching by name if explicit UUID fails (e.g. LLM generated names or frontend fallback ID)
+            ent_name = ent.get("nome") or ent.get("razao_social") or ent.get("name") or ent.get("entity_name")
+            if ent_name and ent_name == entity_id:
+                return ent
         return {}
 
     def get_entity_value(self, entity: dict, attr_name: str) -> str:
