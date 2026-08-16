@@ -49,13 +49,28 @@ jobs:
         run: |
           firebase functions:delete generate_document --force --project "$FIREBASE_PROJECT_ID" || true
 
+      - name: Deploy Vector Indexes via gcloud
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
+        run: |
+          # The service account is already activated in the "Setup GCP Auth..." step
+          # gcloud auth activate-service-account --key-file=/tmp/firebase-key.json
+          # Note: gcloud's dictionary arguments parse by commas, so we must escape the comma in the JSON.
+          gcloud firestore indexes composite create \
+            --collection-group=clauses \
+            --query-scope=COLLECTION \
+            --field-config field-path=embedding,vector-config='{"dimension":"768"\,"flat":{}}' \
+            --database="(default)" \
+            --project="$FIREBASE_PROJECT_ID" || echo "Index creation likely failed or already exists. Ignoring."
+
       - name: Deploy to Firebase Functions
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-key.json
           SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'cartorio-meneghel-ai' }}
         run: |
-          firebase deploy --only functions,firestore:rules,firestore:indexes,storage --force --project "$FIREBASE_PROJECT_ID"
+          firebase deploy --only functions,firestore:rules,storage --force --project "$FIREBASE_PROJECT_ID"
+          firebase deploy --only firestore:indexes --non-interactive --project "$FIREBASE_PROJECT_ID"
 
   deploy-frontend:
     runs-on: ubuntu-latest
