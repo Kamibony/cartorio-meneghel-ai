@@ -92,9 +92,13 @@ class DocumentResolver:
         """
         Parses tags and retrieves exact data deterministically.
         """
+        import json
         # Try finding in explicit variables_data first
         if tag in variables_data and variables_data[tag]:
-            return variables_data[tag]
+            val = variables_data[tag]
+            if isinstance(val, (dict, list)):
+                return json.dumps(val, ensure_ascii=False)
+            return str(val)
 
         # Try parsing from role mapping e.g., OUTORGANTE_NOME
         parts = tag.split("_", 1)
@@ -118,22 +122,54 @@ class DocumentResolver:
 
         return "[DADO FALTANTE]"
 
+    def _get_role_qualification(self, role: str, role_mapping: dict, ground_truth: dict) -> str:
+        entity_ids = role_mapping.get(role) or role_mapping.get(role.upper()) or role_mapping.get(role.lower())
+        if not entity_ids:
+            return "[DADO FALTANTE]"
+
+        entities = [self.get_entity_by_id(eid, ground_truth) for eid in entity_ids]
+        entities = [e for e in entities if e]
+        if not entities:
+            return "[DADO FALTANTE]"
+
+        entity_descriptions = []
+        for e in entities:
+            nome = self.get_entity_value(e, "nome")
+            nacionalidade = self.get_entity_value(e, "nacionalidade")
+            estado_civil = self.get_entity_value(e, "estado_civil")
+            profissao = self.get_entity_value(e, "profissao")
+            cpf = self.get_entity_value(e, "cpf") or self.get_entity_value(e, "cnpj")
+            rg = self.get_entity_value(e, "rg")
+            endereco = self.get_entity_value(e, "endereco")
+
+            desc = f"{nome}"
+            if nacionalidade: desc += f", {nacionalidade}"
+            if estado_civil: desc += f", {estado_civil}"
+            if profissao: desc += f", {profissao}"
+            if rg: desc += f", portador do RG {rg}"
+            if cpf: desc += f", inscrito no CPF/CNPJ sob o nº {cpf}"
+            if endereco: desc += f", residente e domiciliado em {endereco}"
+
+            entity_descriptions.append(desc)
+
+        if len(entity_descriptions) > 1:
+            combined_desc = ", ".join(entity_descriptions[:-1]) + " e " + entity_descriptions[-1]
+        else:
+            combined_desc = entity_descriptions[0]
+
+        return combined_desc
+
     def assemble(self, selected_clauses: list, role_mapping: dict, ground_truth: dict, variables_data: dict) -> bytes:
         from docx import Document
         import io
 
-        document = Document()
-        document.add_heading('MINUTA GERADA', 0)
+        qualificacao_outorgante = self._get_role_qualification("OUTORGANTE", role_mapping, ground_truth)
+        qualificacao_procurador = self._get_role_qualification("PROCURADOR", role_mapping, ground_truth)
 
-        preamble_text = self.generate_preamble(role_mapping, ground_truth)
-        document.add_paragraph(preamble_text)
-
+        poderes_parts = []
         for clause_data in selected_clauses:
             title = clause_data.get("title", "")
             text = clause_data.get("text", "")
-
-            if title:
-                document.add_heading(title, level=1)
 
             # Find all tags in the text
             found_tags = set(re.findall(r"\{\{([A-Za-z0-9_]+)\}\}", text))
@@ -143,7 +179,36 @@ class DocumentResolver:
                 resolved_value = self.resolve_tag(tag, role_mapping, ground_truth, variables_data)
                 text = text.replace(f"{{{{{tag}}}}}", str(resolved_value))
 
-            document.add_paragraph(text)
+            if title:
+                poderes_parts.append(f"{title.upper()}\n{text}")
+            else:
+                poderes_parts.append(text)
+
+        poderes_especificos = "\n\n".join(poderes_parts)
+
+        master_template = f'''MINUTA DE PROCURAÇÃO PÚBLICA
+
+OUTORGANTE(S):
+{qualificacao_outorgante}
+
+OUTORGADO(A)(S) / PROCURADOR(A)(ES):
+{qualificacao_procurador}
+
+PODERES:
+Por este instrumento público e nos melhores termos de direito, o(s) Outorgante(s) nomeia(m) e constitui(em) seu(s) bastante Procurador(es) acima qualificado(s), a quem confere(m) os mais amplos, gerais e ilimitados poderes para o fim específico de:
+
+{poderes_especificos}
+
+Podendo, para tanto, assinar recibos, dar quitações, requerer, alegar e assinar o que for preciso, combinar cláusulas e condições, juntar e retirar documentos, prestar declarações e, enfim, praticar todos os demais atos necessários ao fiel e cabal cumprimento do presente mandato, comprometendo-se o(s) Outorgante(s) a dar tudo por bom, firme e valioso.'''
+
+        document = Document()
+        for paragraph_text in master_template.split('\n'):
+            if paragraph_text == "MINUTA DE PROCURAÇÃO PÚBLICA":
+                document.add_heading(paragraph_text, level=0)
+            elif paragraph_text.strip():
+                document.add_paragraph(paragraph_text)
+            else:
+                document.add_paragraph()
 
         out_f = io.BytesIO()
         document.save(out_f)

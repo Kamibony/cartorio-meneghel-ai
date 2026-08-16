@@ -34,12 +34,7 @@ def test_assemble_dynamic_document():
 
     verified_data = {
         "COMPRADOR_NOME": "João Silva",
-        "DETAILS": {
-            "document_type": "CNH",
-            "entities": [
-                {"name": "Banco do Brasil", "cnpj": "00.000.000/0001-91"}
-            ]
-        }
+            "DETAILS": "Banco do Brasil"
     }
 
     sys.path.append('.')
@@ -55,7 +50,7 @@ def test_assemble_dynamic_document():
         mock_instance.models.generate_content.return_value = mock_response
 
         try:
-            result_bytes = core.generator.assemble_dynamic_document(["c1", "c2"], verified_data, mock_db)
+            result_bytes = core.generator.assemble_dynamic_document(["c1", "c2"], {}, {}, verified_data, mock_db)
 
             from docx import Document
             doc = Document(io.BytesIO(result_bytes))
