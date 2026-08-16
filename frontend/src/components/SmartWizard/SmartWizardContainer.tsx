@@ -86,7 +86,7 @@ const initWizardState = (initial: WizardState): WizardState => {
     const cached = sessionStorage.getItem('wizard_state');
     if (cached) {
       const parsed = JSON.parse(cached);
-      return { ...initial, ...parsed, arraySelections: parsed.arraySelections || initial.arraySelections };
+      return { ...initial, ...parsed };
     }
   } catch (e) {
     console.error("Failed to parse wizard state from sessionStorage", e);
