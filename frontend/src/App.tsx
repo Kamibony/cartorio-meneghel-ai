@@ -11,7 +11,6 @@ import TemplateManager from './components/TemplateManager';
 import GeneratorModule from './components/modules/GeneratorModule';
 import EscreventeInbox from './components/EscreventeInbox';
 import MasterDashboard from './components/MasterDashboard';
-import SmartWizardContainer from './components/SmartWizard/SmartWizardContainer';
 
 function Dashboard() {
   const { currentUser, userRole, isLoading } = useAuth();
@@ -249,7 +248,7 @@ function Dashboard() {
             </div>
           ) : activeView === 'smart_wizard' ? (
             <div className="h-full overflow-auto">
-              <SmartWizardContainer groundTruth={groundTruth} onGenerated={(text) => console.log('Generated:', text)} />
+              <GeneratorModule initialDraftId={draftId} initialGroundTruth={groundTruth} useSmartWizard={true} />
             </div>
           ) : activeView === 'master_dashboard' ? (
             <div className="h-full overflow-auto">

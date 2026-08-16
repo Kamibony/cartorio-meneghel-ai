@@ -23,6 +23,7 @@ type WizardAction =
   | { type: 'SET_STEP'; payload: number }
   | { type: 'SET_ORCHESTRATOR_RESPONSE'; payload: any }
   | { type: 'UPDATE_CLAUSE_FORM_DATA'; payload: { tag: string; value: string } }
+  | { type: 'AUTOFILL_CLAUSE_FORM_DATA'; payload: Record<string, string> }
   | { type: 'START_GENERATION' }
   | { type: 'GENERATION_SUCCESS'; payload: { text: string; fileUrl: string } }
   | { type: 'GENERATION_ERROR'; payload: string }
@@ -54,6 +55,14 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         error: null,
         generatedText: null,
         generatedFileUrl: null
+      };
+    case 'AUTOFILL_CLAUSE_FORM_DATA':
+      return {
+        ...state,
+        clauseFormData: {
+          ...state.clauseFormData,
+          ...action.payload,
+        },
       };
     case 'UPDATE_CLAUSE_FORM_DATA':
       return {
@@ -100,6 +109,29 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
   useEffect(() => {
     sessionStorage.setItem('wizard_state', JSON.stringify(state));
   }, [state]);
+
+  useEffect(() => {
+    if (state.orchestratorResponse?.required_variables && groundTruth) {
+      const newFormData: Record<string, string> = {};
+      let hasChanges = false;
+      state.orchestratorResponse.required_variables.forEach((variable: any) => {
+        const tag = variable.name;
+        if (state.clauseFormData[tag] === undefined) {
+          if (groundTruth[tag] !== undefined) {
+             newFormData[tag] = typeof groundTruth[tag] === 'string' ? groundTruth[tag] : JSON.stringify(groundTruth[tag], null, 2);
+          } else if (groundTruth._contexto_extraido && groundTruth._contexto_extraido[tag] !== undefined) {
+             newFormData[tag] = typeof groundTruth._contexto_extraido[tag] === 'string' ? groundTruth._contexto_extraido[tag] : JSON.stringify(groundTruth._contexto_extraido[tag], null, 2);
+          } else {
+             newFormData[tag] = JSON.stringify(groundTruth, null, 2);
+          }
+          hasChanges = true;
+        }
+      });
+      if (hasChanges) {
+        dispatch({ type: 'AUTOFILL_CLAUSE_FORM_DATA', payload: newFormData });
+      }
+    }
+  }, [state.orchestratorResponse, groundTruth, state.clauseFormData]);
   const { cartorioId } = useAuth();
 
   const handleGenerate = async () => {
@@ -140,6 +172,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
 
           const url = window.URL.createObjectURL(blob);
           dispatch({ type: 'GENERATION_SUCCESS', payload: { text: result.plain_text, fileUrl: url } });
+          onGenerated(result.plain_text);
       } else {
           throw new Error("Resposta inválida do servidor.");
       }
