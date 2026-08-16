@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { orchestrateDocument } from '../../../api/client';
 
 interface Props {
-  onNext: () => void;
+  onOrchestrated: (response: any) => void;
 }
 
-const Step0_IntentDefinition: React.FC<Props> = ({ onNext }) => {
+const Step0_IntentDefinition: React.FC<Props> = ({ onOrchestrated }) => {
   const [intent, setIntent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,9 +18,7 @@ const Step0_IntentDefinition: React.FC<Props> = ({ onNext }) => {
 
     try {
       const response = await orchestrateDocument(intent);
-      console.log('Orchestrator Response:', response);
-      // We log and immediately proceed for now as this is a tracer bullet
-      onNext();
+      onOrchestrated(response);
     } catch (err: any) {
       console.error('Orchestrator Error:', err);
       setError(err.message || 'Erro ao processar intenção.');
@@ -54,13 +52,6 @@ const Step0_IntentDefinition: React.FC<Props> = ({ onNext }) => {
       )}
 
       <div className="mt-auto pt-4 flex justify-end space-x-2">
-        <button
-          onClick={onNext}
-          disabled={isLoading}
-          className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-bold rounded hover:bg-gray-300 transition-colors"
-        >
-          Pular
-        </button>
         <button
           onClick={handleSubmit}
           disabled={!intent.trim() || isLoading}
