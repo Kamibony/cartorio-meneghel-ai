@@ -113,6 +113,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         cartorio_id: cartorioId,
         template_id: "DYNAMIC_CLAUSES", // Dummy template ID for now to bypass static templates requirement in backend
         verified_data: state.clauseFormData,
+        selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
         draft_id: groundTruth?.document_id || null,
         imported_at: groundTruth?.updatedAt ? {
              _seconds: groundTruth.updatedAt.seconds,
