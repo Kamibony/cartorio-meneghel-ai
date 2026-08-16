@@ -1286,34 +1286,44 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
 
 
         import uuid
-        bucket = storage.bucket()
+        selected_clause_ids = data.get("selected_clause_ids", [])
 
-        template_ref = db.collection("templates").document(template_id)
-        template_doc = template_ref.get()
+        if template_id == "DYNAMIC_CLAUSES":
+            # Assembly template dynamically
+            from core.generator import assemble_dynamic_document
+            try:
+                generated_bytes = assemble_dynamic_document(selected_clause_ids, verified_data, db)
+            except ValueError as ve:
+                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
+        else:
+            bucket = storage.bucket()
 
-        if not template_doc.exists:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template not found")
+            template_ref = db.collection("templates").document(template_id)
+            template_doc = template_ref.get()
 
-        template_info = template_doc.to_dict()
+            if not template_doc.exists:
+                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template not found")
 
-        template_cartorio_id = template_info.get("cartorio_id")
-        if template_cartorio_id not in [cartorio_id, "SYSTEM"]:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized to access this template")
+            template_info = template_doc.to_dict()
 
-        gcs_path = template_info.get("gcs_path")
-        required_tags = template_info.get("required_tags", [])
+            template_cartorio_id = template_info.get("cartorio_id")
+            if template_cartorio_id not in [cartorio_id, "SYSTEM"]:
+                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.PERMISSION_DENIED, message="Unauthorized to access this template")
 
-        blob = bucket.blob(gcs_path)
-        if not blob.exists():
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template file missing in storage")
+            gcs_path = template_info.get("gcs_path")
+            required_tags = template_info.get("required_tags", [])
 
-        template_bytes = blob.download_as_bytes()
+            blob = bucket.blob(gcs_path)
+            if not blob.exists():
+                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Template file missing in storage")
 
-        from core.generator import generate_document_from_template
-        try:
-            generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
-        except ValueError as ve:
-            raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
+            template_bytes = blob.download_as_bytes()
+
+            from core.generator import generate_document_from_template
+            try:
+                generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
+            except ValueError as ve:
+                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
 
         import base64
         base64_encoded = base64.b64encode(generated_bytes).decode('utf-8')

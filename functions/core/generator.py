@@ -3,6 +3,7 @@ import logging
 import io
 import os
 from docxtpl import DocxTemplate
+from docx import Document
 from google import genai
 from google.genai import types
 
@@ -279,3 +280,42 @@ Output ONLY the suggested text, nothing else. Do not include markdown blocks or 
     except Exception as e:
         logger.error(f"Error suggesting field text: {e}")
         raise e
+
+def assemble_dynamic_document(selected_clause_ids: list, verified_data: dict, db) -> bytes:
+    """
+    Assembles a document dynamically from a list of clause IDs and user-verified data.
+    """
+    try:
+        document = Document()
+
+        # Need a default/base title
+        document.add_heading('MINUTA GERADA', 0)
+
+        if not selected_clause_ids:
+            document.add_paragraph("Nenhuma cláusula selecionada para este documento.")
+        else:
+            for clause_id in selected_clause_ids:
+                clause_doc = db.collection("clauses").document(clause_id).get()
+                if not clause_doc.exists:
+                    logger.warning(f"Clause {clause_id} not found during document generation.")
+                    continue
+
+                clause_data = clause_doc.to_dict()
+                title = clause_data.get("title", "")
+                text = clause_data.get("text", "")
+
+                if title:
+                    document.add_heading(title, level=1)
+
+                # Inject variables into text simply.
+                for key, val in verified_data.items():
+                    text = text.replace(f"{{{{{key}}}}}", str(val))
+
+                document.add_paragraph(text)
+
+        out_f = io.BytesIO()
+        document.save(out_f)
+        return out_f.getvalue()
+    except Exception as e:
+        logger.error(f"Error assembling dynamic document: {e}")
+        raise ValueError(f"Failed to assemble dynamic document: {str(e)}")
