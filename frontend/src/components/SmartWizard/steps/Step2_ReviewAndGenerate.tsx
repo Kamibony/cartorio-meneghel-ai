@@ -3,6 +3,8 @@ import AIContextualTextarea from '../components/AIContextualTextarea';
 
 interface Props {
   requiredVariables: any[];
+  roleMapping: Record<string, string[]>;
+  onRoleMappingChange: (role: string, entityIds: string[]) => void;
   groundTruth?: any;
   finalPayload: Record<string, string>;
   onOverride: (tag: string, value: string) => void;
@@ -16,10 +18,21 @@ interface Props {
 }
 
 const Step2_ReviewAndGenerate: React.FC<Props> = ({
-    requiredVariables, finalPayload, onOverride, onGenerate,
+    requiredVariables, roleMapping, onRoleMappingChange, finalPayload, onOverride, onGenerate,
     isGenerating, error, generatedText, generatedFileUrl, onForwardToValidation, onPrev,
     groundTruth
 }) => {
+
+  const entities = groundTruth?.entities || groundTruth?._contexto_extraido?.entities || [];
+
+  const handleRoleEntityToggle = (role: string, entityId: string) => {
+    const currentList = roleMapping[role] || [];
+    if (currentList.includes(entityId)) {
+        onRoleMappingChange(role, currentList.filter(id => id !== entityId));
+    } else {
+        onRoleMappingChange(role, [...currentList, entityId]);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -27,7 +40,33 @@ const Step2_ReviewAndGenerate: React.FC<Props> = ({
 
       {!generatedText && (
           <div className="flex-1 overflow-y-auto pr-2 mb-4">
-              <h3 className="text-xs font-medium text-gray-800 mb-3">Verifique os dados antes de gerar:</h3>
+              <h3 className="text-xs font-medium text-gray-800 mb-3">Mapeamento de Entidades (Papéis):</h3>
+              <div className="grid grid-cols-1 gap-3 mb-6">
+                {Object.keys(roleMapping).map(role => (
+                  <div key={role} className="border border-gray-200 rounded p-2 bg-gray-50">
+                     <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">{role}</label>
+                     <div className="flex flex-col space-y-2">
+                        {entities.map((entity: any) => {
+                            const entityName = entity.nome || entity.razao_social || entity.name || entity.entity_name || entity.id;
+                            const isSelected = (roleMapping[role] || []).includes(entity.id);
+                            return (
+                                <label key={entity.id} className="flex items-center space-x-2 text-xs text-gray-700 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleRoleEntityToggle(role, entity.id)}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span>{entityName}</span>
+                                </label>
+                            );
+                        })}
+                     </div>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="text-xs font-medium text-gray-800 mb-3">Verifique os demais dados antes de gerar:</h3>
               <div className="grid grid-cols-1 gap-3">
                   {requiredVariables.map((variable: any) => {
                       const tag = variable.name;

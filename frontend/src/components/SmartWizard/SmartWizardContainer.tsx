@@ -11,6 +11,7 @@ export interface WizardState {
   currentStep: number;
   orchestratorResponse: any | null;
   clauseFormData: Record<string, string>;
+  roleMapping: Record<string, string[]>;
   isGenerating: boolean;
   error: string | null;
   generatedText: string | null;
@@ -23,6 +24,7 @@ type WizardAction =
   | { type: 'SET_STEP'; payload: number }
   | { type: 'SET_ORCHESTRATOR_RESPONSE'; payload: any }
   | { type: 'UPDATE_CLAUSE_FORM_DATA'; payload: { tag: string; value: string } }
+  | { type: 'UPDATE_ROLE_MAPPING'; payload: { role: string; entityIds: string[] } }
   | { type: 'AUTOFILL_CLAUSE_FORM_DATA'; payload: Record<string, string> }
   | { type: 'START_GENERATION' }
   | { type: 'GENERATION_SUCCESS'; payload: { text: string; fileUrl: string } }
@@ -33,6 +35,7 @@ const initialState: WizardState = {
   currentStep: 0,
   orchestratorResponse: null,
   clauseFormData: {},
+  roleMapping: {},
   isGenerating: false,
   error: null,
   generatedText: null,
@@ -52,6 +55,7 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         ...state,
         orchestratorResponse: action.payload,
         clauseFormData: {},
+        roleMapping: action.payload?.role_mapping || {},
         error: null,
         generatedText: null,
         generatedFileUrl: null
@@ -70,6 +74,14 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         clauseFormData: {
           ...state.clauseFormData,
           [action.payload.tag]: action.payload.value,
+        },
+      };
+    case 'UPDATE_ROLE_MAPPING':
+      return {
+        ...state,
+        roleMapping: {
+          ...state.roleMapping,
+          [action.payload.role]: action.payload.entityIds,
         },
       };
     case 'START_GENERATION':
@@ -184,6 +196,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         cartorio_id: cartorioId,
         template_id: "DYNAMIC_CLAUSES", // Dummy template ID for now to bypass static templates requirement in backend
         verified_data: state.clauseFormData,
+        role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
         draft_id: groundTruth?.document_id || null,
         imported_at: groundTruth?.updatedAt ? {
@@ -242,6 +255,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       <div className="flex-1 overflow-y-auto">
         {state.currentStep === 0 && (
           <Step0_IntentDefinition
+             groundTruth={groundTruth}
              onOrchestrated={(res) => {
                  dispatch({ type: 'SET_ORCHESTRATOR_RESPONSE', payload: res });
                  nextStep();
@@ -258,6 +272,8 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         {state.currentStep === 2 && (
           <Step2_ReviewAndGenerate
             requiredVariables={state.orchestratorResponse?.required_variables || []}
+            roleMapping={state.roleMapping}
+            onRoleMappingChange={(role, entityIds) => dispatch({ type: 'UPDATE_ROLE_MAPPING', payload: { role, entityIds } })}
             groundTruth={groundTruth}
             finalPayload={state.clauseFormData}
             onOverride={(tag, value) => dispatch({ type: 'UPDATE_CLAUSE_FORM_DATA', payload: { tag, value } })}

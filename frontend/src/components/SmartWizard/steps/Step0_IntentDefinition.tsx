@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { orchestrateDocument } from '../../../api/client';
 
 interface Props {
+  groundTruth: any;
   onOrchestrated: (response: any) => void;
 }
 
-const Step0_IntentDefinition: React.FC<Props> = ({ onOrchestrated }) => {
+const Step0_IntentDefinition: React.FC<Props> = ({ groundTruth, onOrchestrated }) => {
   const [intent, setIntent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,8 @@ const Step0_IntentDefinition: React.FC<Props> = ({ onOrchestrated }) => {
     setError(null);
 
     try {
-      const response = await orchestrateDocument(intent);
+      const entities = groundTruth?.entities || groundTruth?._contexto_extraido?.entities || [];
+      const response = await orchestrateDocument(intent, entities);
       onOrchestrated(response);
     } catch (err: any) {
       console.error('Orchestrator Error:', err);

@@ -381,6 +381,7 @@ def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
 
         req_data = req.get_json(silent=True) or {}
         intent = req_data.get("intent")
+        entities = req_data.get("entities", [])
 
         if not intent:
             return https_fn.Response(json.dumps({"error": "Missing intent"}), status=400, content_type="application/json")
@@ -442,18 +443,27 @@ INTENT: "{intent}"
 Below is a list of candidate clauses retrieved from our legal database:
 {json.dumps(candidates, ensure_ascii=False, indent=2)}
 
-Your task is to select the optimal clauses from the candidates to fulfill the user's intent.
-Sequence them in the correct logical order for a legal document.
-ALWAYS start the sequence with a Preamble/Qualification clause (e.g., "Qualificação") that qualifies the involved parties (e.g., Outorgante and Outorgada) before listing the specific clauses.
-Do NOT invent new clauses. Only select from the provided candidates.
+Below are the extracted entities available from the user's uploaded document:
+{json.dumps(entities, ensure_ascii=False, indent=2)}
+
+Your task is twofold:
+1. Select the optimal clauses from the candidates to fulfill the user's intent.
+   Sequence them in the correct logical order for a legal document.
+   ALWAYS start the sequence with a Preamble/Qualification clause (e.g., "Qualificação") that qualifies the involved parties (e.g., Outorgante and Outorgada) before listing the specific clauses.
+   Do NOT invent new clauses. Only select from the provided candidates.
+2. Based on the requested intent and selected clauses, map the extracted entities to logical abstract roles (e.g., OUTORGANTE, PROCURADOR, OUTORGADO, COMPRADOR, VENDEDOR).
+   Return this mapping in the `role_mapping` field.
+   The keys should be the logical abstract roles.
+   The values should be an ARRAY of the entity IDs that belong to that role.
 """
 
         from pydantic import BaseModel, Field
-        from typing import List
+        from typing import List, Dict
 
         class OrchestrationResponse(BaseModel):
             selected_clause_ids: List[str] = Field(description="List of selected clause IDs in logical sequence")
-            reasoning: str = Field(description="Explanation of why these clauses were selected and ordered this way")
+            role_mapping: Dict[str, List[str]] = Field(default_factory=dict, description="Dictionary mapping abstract roles (e.g., 'OUTORGANTE') to arrays of entity IDs (e.g., ['ent_123', 'ent_456']).")
+            reasoning: str = Field(description="Explanation of why these clauses and roles were selected")
 
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -1250,6 +1260,7 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
         verified_data = data.get("verified_data")
         draft_id = data.get("draft_id")
         imported_at = data.get("imported_at")
+        role_mapping = data.get("role_mapping", {})
 
         if not cartorio_id or not template_id or verified_data is None:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
@@ -1304,7 +1315,13 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
             # Assembly template dynamically
             from core.generator import assemble_dynamic_document
             try:
-                generated_bytes = assemble_dynamic_document(selected_clause_ids, verified_data, db)
+                # We fetch ground_truth if we have draft_id
+                ground_truth = {}
+                if draft_id:
+                     draft_doc = db.collection("document_drafts").document(draft_id).get()
+                     if draft_doc.exists:
+                         ground_truth = draft_doc.to_dict()
+                generated_bytes = assemble_dynamic_document(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
             except ValueError as ve:
                 raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
         else:
