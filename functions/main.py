@@ -1319,7 +1319,7 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
                 # We fetch ground_truth if we have draft_id
                 ground_truth = {}
                 if draft_id:
-                     draft_doc = db.collection("document_drafts").document(draft_id).get()
+                     draft_doc = db.collection("minutas").document(draft_id).get()
                      if draft_doc.exists:
                          ground_truth = draft_doc.to_dict()
                 generated_bytes = assemble_dynamic_document(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
@@ -1395,6 +1395,93 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
         return https_fn.Response(json.dumps(error_payload), status=http_status, content_type="application/json")
     except Exception as e:
         logger.error("Error in generate_document_api", exc_info=True)
+        return https_fn.Response(
+            json.dumps({"error": {"code": "INTERNAL", "message": f"Internal server error: {str(e)}"}}),
+            status=500,
+            content_type="application/json"
+        )
+
+@https_fn.on_request(cors=global_cors, memory=options.MemoryOption.MB_512, timeout_sec=540)
+def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
+    """
+    Generates a plain text preview of the dynamic document, ensuring the master wrapper is applied.
+    Accepts REST payload: {"cartorio_id": "...", "verified_data": {...}, "role_mapping": {...}, "selected_clause_ids": [...], "draft_id": "..."}
+    """
+    if req.method != "POST":
+        return https_fn.Response(json.dumps({"error": {"code": "METHOD_NOT_ALLOWED", "message": "Method not allowed"}}), status=405, content_type="application/json")
+
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return https_fn.Response(json.dumps({"error": {"code": "UNAUTHENTICATED", "message": "Unauthenticated"}}), status=401, content_type="application/json")
+
+    token = auth_header.split("Bearer ")[1]
+
+    try:
+        from core.firebase_utils import _init_firebase
+        _init_firebase()
+        from firebase_admin import auth, firestore
+        db = firestore.client()
+
+        try:
+            decoded_token = auth.verify_id_token(token)
+            uid = decoded_token.get("uid")
+        except Exception:
+            return https_fn.Response(json.dumps({"error": {"code": "UNAUTHENTICATED", "message": "Invalid token"}}), status=401, content_type="application/json")
+
+        user_doc = db.collection('users').document(uid).get()
+        if not user_doc.exists:
+            return https_fn.Response(json.dumps({"error": {"code": "PERMISSION_DENIED", "message": "User not found"}}), status=403, content_type="application/json")
+
+        user_data = user_doc.to_dict()
+        data = req.get_json(silent=True)
+
+        if not data:
+            return https_fn.Response(json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": "Missing JSON payload"}}), status=400, content_type="application/json")
+
+        cartorio_id = data.get("cartorio_id")
+        user_role = user_data.get('role')
+        user_cartorio_id = user_data.get('cartorio_id')
+
+        if not cartorio_id:
+            return https_fn.Response(json.dumps({"error": {"code": "PERMISSION_DENIED", "message": "Unauthorized"}}), status=403, content_type="application/json")
+
+        if user_role != 'super_admin' and user_cartorio_id != cartorio_id:
+            return https_fn.Response(json.dumps({"error": {"code": "PERMISSION_DENIED", "message": "Unauthorized"}}), status=403, content_type="application/json")
+
+        verified_data = data.get("verified_data", {})
+        draft_id = data.get("draft_id")
+        role_mapping = data.get("role_mapping", {})
+        selected_clause_ids = data.get("selected_clause_ids", [])
+
+        from core.generator import assemble_dynamic_document
+        ground_truth = {}
+        if draft_id:
+             draft_doc = db.collection("minutas").document(draft_id).get()
+             if draft_doc.exists:
+                 ground_truth = draft_doc.to_dict()
+
+        try:
+            generated_bytes = assemble_dynamic_document(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
+        except ValueError as ve:
+            return https_fn.Response(json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": str(ve)}}), status=400, content_type="application/json")
+
+        from docx import Document
+        import io
+        try:
+            doc_parsed = Document(io.BytesIO(generated_bytes))
+            plain_text = '\n'.join([p.text for p in doc_parsed.paragraphs])
+        except Exception as e:
+            logger.error(f"Failed to parse docx for plain text preview: {e}")
+            plain_text = ""
+
+        return https_fn.Response(
+            json.dumps({"status": "success", "text": plain_text}),
+            status=200,
+            content_type="application/json"
+        )
+
+    except Exception as e:
+        logger.error("Error in preview_dynamic_document", exc_info=True)
         return https_fn.Response(
             json.dumps({"error": {"code": "INTERNAL", "message": f"Internal server error: {str(e)}"}}),
             status=500,

@@ -27,6 +27,7 @@ type WizardAction =
   | { type: 'UPDATE_ROLE_MAPPING'; payload: { role: string; entityIds: string[] } }
   | { type: 'AUTOFILL_CLAUSE_FORM_DATA'; payload: Record<string, string> }
   | { type: 'START_GENERATION' }
+  | { type: 'PREVIEW_SUCCESS'; payload: string }
   | { type: 'GENERATION_SUCCESS'; payload: { text: string; fileUrl: string } }
   | { type: 'GENERATION_ERROR'; payload: string }
   | { type: 'RESET' };
@@ -86,6 +87,8 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       };
     case 'START_GENERATION':
       return { ...state, isGenerating: true, error: null };
+    case 'PREVIEW_SUCCESS':
+      return { ...state, isGenerating: false, generatedText: action.payload };
     case 'GENERATION_SUCCESS':
       return { ...state, isGenerating: false, generatedText: action.payload.text, generatedFileUrl: action.payload.fileUrl };
     case 'GENERATION_ERROR':
@@ -216,6 +219,35 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
   }, [state.orchestratorResponse, normalizedGroundTruth, state.clauseFormData]);
   const { cartorioId } = useAuth();
 
+  const handlePreview = async () => {
+    if (!cartorioId) return;
+    dispatch({ type: 'START_GENERATION' });
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Não autenticado.");
+
+      const payload = {
+        cartorio_id: cartorioId,
+        verified_data: state.clauseFormData,
+        role_mapping: state.roleMapping,
+        selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
+        draft_id: normalizedGroundTruth?.document_id || null
+      };
+
+      const endpoint = `${ENV.generateApiUrl}/preview_dynamic_document`;
+      const result: any = await apiClient.post(endpoint, payload);
+
+      if (result.status === 'success' && result.text) {
+          dispatch({ type: 'PREVIEW_SUCCESS', payload: result.text });
+      } else {
+          throw new Error("Resposta inválida do servidor.");
+      }
+    } catch (err: any) {
+      console.error("Preview error", err);
+      dispatch({ type: 'GENERATION_ERROR', payload: err.message || "Ocorreu um erro ao gerar a pré-visualização." });
+    }
+  };
+
   const handleGenerate = async () => {
     if (!cartorioId) return;
     dispatch({ type: 'START_GENERATION' });
@@ -308,6 +340,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
             groundTruth={normalizedGroundTruth}
             finalPayload={state.clauseFormData}
             onOverride={(tag, value) => dispatch({ type: 'UPDATE_CLAUSE_FORM_DATA', payload: { tag, value } })}
+            onPreview={handlePreview}
             onGenerate={handleGenerate}
             isGenerating={state.isGenerating}
             error={state.error}

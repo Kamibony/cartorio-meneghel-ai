@@ -8,6 +8,7 @@ interface Props {
   groundTruth?: any;
   finalPayload: Record<string, string>;
   onOverride: (tag: string, value: string) => void;
+  onPreview: () => void;
   onGenerate: () => void;
   isGenerating: boolean;
   error: string | null;
@@ -18,7 +19,7 @@ interface Props {
 }
 
 const Step2_ReviewAndGenerate: React.FC<Props> = ({
-    requiredVariables, roleMapping, onRoleMappingChange, finalPayload, onOverride, onGenerate,
+    requiredVariables, roleMapping, onRoleMappingChange, finalPayload, onOverride, onPreview, onGenerate,
     isGenerating, error, generatedText, generatedFileUrl, onForwardToValidation, onPrev,
     groundTruth
 }) => {
@@ -101,7 +102,7 @@ const Step2_ReviewAndGenerate: React.FC<Props> = ({
 
       {error && <div className="text-red-600 text-xs mt-2 mb-2">{error}</div>}
 
-      {generatedText && generatedFileUrl ? (
+      {generatedText ? (
         <div className="flex-1 flex flex-col min-h-[300px]">
           <h3 className="text-sm font-medium text-gray-800 mb-2">Pré-visualização da Minuta Gerada</h3>
           <textarea
@@ -110,19 +111,31 @@ const Step2_ReviewAndGenerate: React.FC<Props> = ({
             value={generatedText}
           />
           <div className="pt-4 flex justify-between shrink-0 mt-4">
-            <a
-              href={generatedFileUrl}
-              download={`minuta_${Date.now()}.docx`}
-              className="px-4 py-2 bg-gray-600 text-white text-sm font-bold rounded hover:bg-gray-700 shadow-sm transition-colors"
-            >
-              Baixar .docx
-            </a>
-            <button
-              onClick={onForwardToValidation}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded hover:bg-blue-700 shadow-sm transition-colors"
-            >
-              Avançar para Validação
-            </button>
+            {!generatedFileUrl ? (
+                <button
+                  onClick={onGenerate}
+                  disabled={isGenerating}
+                  className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 disabled:bg-green-400 shadow-sm transition-colors"
+                >
+                  {isGenerating ? 'Gerando...' : 'Gerar Documento Final'}
+                </button>
+            ) : (
+                <>
+                <a
+                  href={generatedFileUrl}
+                  download={`minuta_${Date.now()}.docx`}
+                  className="px-4 py-2 bg-gray-600 text-white text-sm font-bold rounded hover:bg-gray-700 shadow-sm transition-colors"
+                >
+                  Baixar .docx
+                </a>
+                <button
+                  onClick={onForwardToValidation}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded hover:bg-blue-700 shadow-sm transition-colors"
+                >
+                  Avançar para Validação
+                </button>
+                </>
+            )}
           </div>
         </div>
       ) : (
@@ -134,11 +147,11 @@ const Step2_ReviewAndGenerate: React.FC<Props> = ({
               Voltar
             </button>
             <button
-              onClick={onGenerate}
+              onClick={onPreview}
               disabled={isGenerating}
-              className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 disabled:bg-green-400 shadow-sm transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded hover:bg-blue-700 disabled:bg-blue-400 shadow-sm transition-colors"
             >
-                {isGenerating ? 'Gerando...' : 'Gerar Minuta'}
+                {isGenerating ? 'Carregando...' : 'Pré-visualizar Minuta'}
             </button>
         </div>
       )}
