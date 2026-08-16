@@ -22,7 +22,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Firebase Tools
-        run: npm install -g firebase-tools
+        run: npm install -g firebase-tools@latest
 
       - name: Setup Python Virtual Environment and Install Dependencies
         working-directory: ./functions
