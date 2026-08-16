@@ -417,7 +417,8 @@ def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
             candidates.append({
                 "id": doc.id,
                 "title": doc_data.get("title", ""),
-                "text": doc_data.get("text", "")
+                "text": doc_data.get("text", ""),
+                "required_variables": doc_data.get("required_variables", [])
             })
 
         if not candidates:
@@ -469,6 +470,18 @@ Do NOT invent new clauses. Only select from the provided candidates.
         # Robust intersection check to prevent hallucination
         final_selected_ids = [cid for cid in llm_selected_ids if cid in candidate_ids]
         parsed_response["selected_clause_ids"] = final_selected_ids
+
+        # Aggregate required variables from the selected candidates
+        required_variables_map = {}
+        for candidate in candidates:
+            if candidate["id"] in final_selected_ids:
+                for var in candidate.get("required_variables", []):
+                    # Dedup by variable name
+                    var_name = var.get("name")
+                    if var_name and var_name not in required_variables_map:
+                        required_variables_map[var_name] = var
+
+        parsed_response["required_variables"] = list(required_variables_map.values())
 
         return https_fn.Response(
             json.dumps(parsed_response),

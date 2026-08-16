@@ -2,7 +2,7 @@ import React from 'react';
 import AIContextualTextarea from '../components/AIContextualTextarea';
 
 interface Props {
-  template: any;
+  requiredVariables: any[];
   groundTruth?: any;
   finalPayload: Record<string, string>;
   onOverride: (tag: string, value: string) => void;
@@ -15,13 +15,11 @@ interface Props {
   onPrev: () => void;
 }
 
-const Step4_ReviewAndGenerate: React.FC<Props> = ({
-    template, finalPayload, onOverride, onGenerate,
+const Step2_ReviewAndGenerate: React.FC<Props> = ({
+    requiredVariables, finalPayload, onOverride, onGenerate,
     isGenerating, error, generatedText, generatedFileUrl, onForwardToValidation, onPrev,
     groundTruth
 }) => {
-
-  const requiredTags = template.required_tags || [];
 
   return (
     <div className="flex flex-col h-full">
@@ -31,12 +29,15 @@ const Step4_ReviewAndGenerate: React.FC<Props> = ({
           <div className="flex-1 overflow-y-auto pr-2 mb-4">
               <h3 className="text-xs font-medium text-gray-800 mb-3">Verifique os dados antes de gerar:</h3>
               <div className="grid grid-cols-1 gap-3">
-                  {requiredTags.map((tag: string) => (
+                  {requiredVariables.map((variable: any) => {
+                      const tag = variable.name;
+                      return (
                       <div key={tag}>
-                          <label className="block text-xs font-medium text-gray-700 mb-1 capitalize">
+                          <label className="block text-xs font-medium text-gray-700 mb-1 capitalize" title={variable.description}>
                               {tag.replace(/_/g, ' ')}
+                              {variable.description && <span className="ml-1 text-gray-400 normal-case">({variable.description})</span>}
                           </label>
-                          {tag.toLowerCase().startsWith('valor_') || tag.toLowerCase().includes('emolumentos') ? (
+                          {tag.toLowerCase().startsWith('valor_') || tag.toLowerCase().includes('emolumentos') || variable.type === 'number' ? (
                               <input
                                   type="text"
                                   value={finalPayload[tag] || ''}
@@ -53,7 +54,8 @@ const Step4_ReviewAndGenerate: React.FC<Props> = ({
                               />
                           )}
                       </div>
-                  ))}
+                      );
+                  })}
               </div>
           </div>
       )}
@@ -105,4 +107,4 @@ const Step4_ReviewAndGenerate: React.FC<Props> = ({
   );
 };
 
-export default Step4_ReviewAndGenerate;
+export default Step2_ReviewAndGenerate;
