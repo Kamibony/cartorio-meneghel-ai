@@ -8,9 +8,10 @@ import type { DiffBlock } from '../InteractiveDiffWidget';
 interface GeneratorModuleProps {
     initialDraftId?: string | null;
     initialGroundTruth?: any;
+    useSmartWizard?: boolean;
 }
 
-const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initialGroundTruth }) => {
+const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initialGroundTruth, useSmartWizard }) => {
     const [draftId, setDraftId] = useState<string | null>(() => {
         if (initialDraftId) return initialDraftId;
         const cached = sessionStorage.getItem('generator_draftId');
@@ -128,6 +129,7 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
                         <TemplateGeneratorInput
                             groundTruth={resolvedGroundTruth}
                             onGenerated={handleDocumentGenerated}
+                            useSmartWizard={useSmartWizard}
                         />
 
                         {draftText && (
