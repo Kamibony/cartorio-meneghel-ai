@@ -159,10 +159,7 @@ class DocumentResolver:
 
         return combined_desc
 
-    def assemble(self, selected_clauses: list, role_mapping: dict, ground_truth: dict, variables_data: dict) -> bytes:
-        from docx import Document
-        import io
-
+    def assemble_text(self, selected_clauses: list, role_mapping: dict, ground_truth: dict, variables_data: dict) -> str:
         qualificacao_outorgante = self._get_role_qualification("OUTORGANTE", role_mapping, ground_truth)
         qualificacao_procurador = self._get_role_qualification("PROCURADOR", role_mapping, ground_truth)
 
@@ -200,6 +197,14 @@ Por este instrumento público e nos melhores termos de direito, o(s) Outorgante(
 {poderes_especificos}
 
 Podendo, para tanto, assinar recibos, dar quitações, requerer, alegar e assinar o que for preciso, combinar cláusulas e condições, juntar e retirar documentos, prestar declarações e, enfim, praticar todos os demais atos necessários ao fiel e cabal cumprimento do presente mandato, comprometendo-se o(s) Outorgante(s) a dar tudo por bom, firme e valioso.'''
+
+        return master_template
+
+    def assemble(self, selected_clauses: list, role_mapping: dict, ground_truth: dict, variables_data: dict) -> bytes:
+        master_template = self.assemble_text(selected_clauses, role_mapping, ground_truth, variables_data)
+
+        from docx import Document
+        import io
 
         document = Document()
         for paragraph_text in master_template.split('\n'):
