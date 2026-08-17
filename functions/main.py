@@ -1475,7 +1475,7 @@ def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
             plain_text = ""
 
         return https_fn.Response(
-            json.dumps({"status": "success", "text": plain_text}),
+            json.dumps({"status": "success", "preview_text": plain_text}),
             status=200,
             content_type="application/json"
         )
