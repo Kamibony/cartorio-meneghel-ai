@@ -3,7 +3,7 @@ import Step0_IntentDefinition from './steps/Step0_IntentDefinition';
 import Step1_AIProposal from './steps/Step1_AIProposal';
 import Step2_ReviewAndGenerate from './steps/Step2_ReviewAndGenerate';
 import { ENV } from '../../config/env';
-import apiClient from '../../api/client';
+import apiClient, { PreviewResponse } from '../../api/client';
 import { auth } from '../../utils/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -102,6 +102,7 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
 
 interface SmartWizardContainerProps {
   groundTruth: any;
+  draftId?: string | null;
   onGenerated: (text: string) => void;
 }
 
@@ -118,7 +119,7 @@ const initWizardState = (initial: WizardState): WizardState => {
   return initial;
 };
 
-const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth, onGenerated }) => {
+const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth, draftId, onGenerated }) => {
   // Inject stable unique IDs into groundTruth entities if they are missing
   const normalizedGroundTruth = React.useMemo(() => {
     if (!groundTruth) return groundTruth;
@@ -232,7 +233,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         verified_data: state.clauseFormData,
         role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
-        draft_id: normalizedGroundTruth?.document_id || null,
+        draft_id: draftId || normalizedGroundTruth?.document_id || null,
         imported_at: normalizedGroundTruth?.updatedAt ? {
              _seconds: normalizedGroundTruth.updatedAt.seconds,
              _nanoseconds: normalizedGroundTruth.updatedAt.nanoseconds
@@ -240,10 +241,10 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       };
 
       const endpoint = `${ENV.generateApiUrl}/preview_dynamic_document`;
-      const result: any = await apiClient.post(endpoint, payload);
+      const result: PreviewResponse = await apiClient.post(endpoint, payload);
 
-      if (result.status === 'success' && result.preview_text !== undefined) {
-          dispatch({ type: 'PREVIEW_SUCCESS', payload: result.preview_text });
+      if (result.status === 'success' && result.plain_text !== undefined) {
+          dispatch({ type: 'PREVIEW_SUCCESS', payload: result.plain_text });
       } else {
           throw new Error("Resposta inválida do servidor.");
       }
@@ -266,7 +267,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         verified_data: state.clauseFormData,
         role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
-        draft_id: normalizedGroundTruth?.document_id || null,
+        draft_id: draftId || normalizedGroundTruth?.document_id || null,
         imported_at: normalizedGroundTruth?.updatedAt ? {
              _seconds: normalizedGroundTruth.updatedAt.seconds,
              _nanoseconds: normalizedGroundTruth.updatedAt.nanoseconds
@@ -274,10 +275,10 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       };
 
       const endpoint = `${ENV.generateApiUrl}/generate_document_api`;
-      const result: any = await apiClient.post(endpoint, payload);
+      const result: PreviewResponse = await apiClient.post(endpoint, payload);
 
       if (result.status === 'success' && result.file_base64) {
-          if (!result.plain_text) {
+          if (result.plain_text === undefined) {
               throw new Error("O servidor não retornou o texto extraído da minuta (plain_text).");
           }
 

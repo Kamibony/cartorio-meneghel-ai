@@ -8,6 +8,13 @@ export interface AppError {
   details?: any;
 }
 
+export interface PreviewResponse {
+  status: string;
+  plain_text?: string;
+  file_base64?: string;
+  [key: string]: any;
+}
+
 const apiClient = axios.create({
   timeout: 600000, // Large timeout to let direct Cloud Run requests handle their own timeouts
 });
