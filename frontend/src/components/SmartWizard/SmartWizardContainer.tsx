@@ -3,7 +3,8 @@ import Step0_IntentDefinition from './steps/Step0_IntentDefinition';
 import Step1_AIProposal from './steps/Step1_AIProposal';
 import Step2_ReviewAndGenerate from './steps/Step2_ReviewAndGenerate';
 import { ENV } from '../../config/env';
-import apiClient, { PreviewResponse } from '../../api/client';
+import apiClient from '../../api/client';
+import type { PreviewResponse } from '../../api/client';
 import { auth } from '../../utils/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 
