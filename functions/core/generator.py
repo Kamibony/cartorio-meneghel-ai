@@ -315,3 +315,29 @@ def assemble_dynamic_document(selected_clause_ids: list, role_mapping: dict, gro
     except Exception as e:
         logger.error(f"Error assembling dynamic document: {e}")
         raise ValueError(f"Failed to assemble dynamic document: {str(e)}")
+
+def preview_dynamic_document_text(selected_clause_ids: list, role_mapping: dict, ground_truth: dict, verified_data: dict, db) -> str:
+    """
+    Assembles a plain text string preview of a document dynamically from a list of clause IDs deterministically.
+    """
+    try:
+        from core.resolver import DocumentResolver
+        resolver = DocumentResolver()
+
+        if not selected_clause_ids:
+            return "MINUTA GERADA\n\nNenhuma cláusula selecionada para este documento."
+
+        clauses = []
+        for clause_id in selected_clause_ids:
+            clause_doc = db.collection("clauses").document(clause_id).get()
+            if not clause_doc.exists:
+                logger.warning(f"Clause {clause_id} not found during document preview.")
+                continue
+
+            clauses.append(clause_doc.to_dict())
+
+        return resolver.assemble_text(clauses, role_mapping, ground_truth, verified_data)
+
+    except Exception as e:
+        logger.error(f"Error assembling dynamic document text: {e}")
+        raise ValueError(f"Failed to assemble dynamic document text: {str(e)}")

@@ -1453,7 +1453,7 @@ def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
         role_mapping = data.get("role_mapping", {})
         selected_clause_ids = data.get("selected_clause_ids", [])
 
-        from core.generator import assemble_dynamic_document
+        from core.generator import preview_dynamic_document_text
         ground_truth = {}
         if draft_id:
              draft_doc = db.collection("minutas").document(draft_id).get()
@@ -1461,18 +1461,9 @@ def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
                  ground_truth = draft_doc.to_dict()
 
         try:
-            generated_bytes = assemble_dynamic_document(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
+            plain_text = preview_dynamic_document_text(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
         except ValueError as ve:
             return https_fn.Response(json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": str(ve)}}), status=400, content_type="application/json")
-
-        from docx import Document
-        import io
-        try:
-            doc_parsed = Document(io.BytesIO(generated_bytes))
-            plain_text = '\n'.join([p.text for p in doc_parsed.paragraphs])
-        except Exception as e:
-            logger.error(f"Failed to parse docx for plain text preview: {e}")
-            plain_text = ""
 
         return https_fn.Response(
             json.dumps({"status": "success", "preview_text": plain_text}),
