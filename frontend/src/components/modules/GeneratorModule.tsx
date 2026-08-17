@@ -128,6 +128,7 @@ const GeneratorModule: React.FC<GeneratorModuleProps> = ({ initialDraftId, initi
                     <>
                         <TemplateGeneratorInput
                             groundTruth={resolvedGroundTruth}
+                            draftId={draftId}
                             onGenerated={handleDocumentGenerated}
                             useSmartWizard={useSmartWizard}
                         />

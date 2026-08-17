@@ -3,18 +3,20 @@ import SmartWizardContainer from './SmartWizard/SmartWizardContainer';
 
 interface TemplateGeneratorInputProps {
   groundTruth: any;
+  draftId?: string | null;
   onGenerated: (text: string) => void;
   onValidationComplete?: () => void;
   useSmartWizard?: boolean;
 }
 
-const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundTruth, onGenerated, useSmartWizard }) => {
+const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundTruth, draftId, onGenerated, useSmartWizard }) => {
   const [legacyText, setLegacyText] = useState('');
 
   if (useSmartWizard) {
     return (
       <SmartWizardContainer
         groundTruth={groundTruth}
+        draftId={draftId}
         onGenerated={onGenerated}
       />
     );
