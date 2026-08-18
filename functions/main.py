@@ -1258,12 +1258,10 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
 
         cartorio_id = data.get("cartorio_id")
         template_id = data.get("template_id")
-        verified_data = data.get("verified_data")
         draft_id = data.get("draft_id")
         imported_at = data.get("imported_at")
-        role_mapping = data.get("role_mapping", {})
 
-        if not cartorio_id or not template_id or verified_data is None:
+        if not cartorio_id or not template_id:
             raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing required fields")
 
         if draft_id and imported_at:
@@ -1310,11 +1308,11 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
 
 
         import uuid
-        selected_clause_ids = data.get("selected_clause_ids", [])
         intent = data.get("intent", "")
 
-        ground_truth = {}
-        if draft_id:
+        # Allow frontend to supply raw groundTruth directly for new drafts, or fallback to fetching draft
+        ground_truth = data.get("ground_truth", {})
+        if draft_id and not ground_truth:
              draft_doc = db.collection("minutas").document(draft_id).get()
              if draft_doc.exists:
                  ground_truth = draft_doc.to_dict()
@@ -1324,6 +1322,9 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
             try:
                 from services.rag_service import RAGService
                 from services.llm_generation_service import LLMGenerationService
+
+                if not intent:
+                    raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message="Missing intent for dynamic generation")
 
                 rag_service = RAGService()
                 llm_service = LLMGenerationService()
@@ -1376,7 +1377,9 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
 
             from core.generator import generate_document_from_template
             try:
-                generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
+                # Fallback to ground_truth for legacy static templates if verified_data is missing
+                data_to_inject = data.get("verified_data") or ground_truth
+                generated_bytes = generate_document_from_template(template_bytes, data_to_inject, required_tags)
 
                 # Parse docx for plain_text fallback
                 from docx import Document
@@ -1473,14 +1476,15 @@ def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
         if user_role != 'super_admin' and user_cartorio_id != cartorio_id:
             return https_fn.Response(json.dumps({"error": {"code": "PERMISSION_DENIED", "message": "Unauthorized"}}), status=403, content_type="application/json")
 
-        verified_data = data.get("verified_data", {})
         draft_id = data.get("draft_id")
-        role_mapping = data.get("role_mapping", {})
-        selected_clause_ids = data.get("selected_clause_ids", [])
         intent = data.get("intent", "")
 
-        ground_truth = {}
-        if draft_id:
+        if not intent:
+            return https_fn.Response(json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": "Missing intent"}}), status=400, content_type="application/json")
+
+        # Allow frontend to supply raw groundTruth directly for new drafts, or fallback to fetching draft
+        ground_truth = data.get("ground_truth", {})
+        if draft_id and not ground_truth:
              draft_doc = db.collection("minutas").document(draft_id).get()
              if draft_doc.exists:
                  ground_truth = draft_doc.to_dict()
