@@ -1311,20 +1311,45 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
 
         import uuid
         selected_clause_ids = data.get("selected_clause_ids", [])
+        intent = data.get("intent", "")
+
+        ground_truth = {}
+        if draft_id:
+             draft_doc = db.collection("minutas").document(draft_id).get()
+             if draft_doc.exists:
+                 ground_truth = draft_doc.to_dict()
 
         if template_id == "DYNAMIC_CLAUSES":
-            # Assembly template dynamically
-            from core.generator import assemble_dynamic_document
+            # Assemble document dynamically using RAG + LLM
             try:
-                # We fetch ground_truth if we have draft_id
-                ground_truth = {}
-                if draft_id:
-                     draft_doc = db.collection("minutas").document(draft_id).get()
-                     if draft_doc.exists:
-                         ground_truth = draft_doc.to_dict()
-                generated_bytes = assemble_dynamic_document(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
-            except ValueError as ve:
-                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
+                from services.rag_service import RAGService
+                from services.llm_generation_service import LLMGenerationService
+
+                rag_service = RAGService()
+                llm_service = LLMGenerationService()
+                template = rag_service.retrieve_template(intent)
+
+                if not template:
+                    raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message=f"No RAG template found for intent: {intent}")
+
+                plain_text = llm_service.generate_document(intent, template, ground_truth)
+
+                # Convert LLM plain text to a DOCX byte array
+                from docx import Document
+                import io
+
+                document = Document()
+                for line in plain_text.split('\n'):
+                    if line.strip():
+                        document.add_paragraph(line)
+
+                out_f = io.BytesIO()
+                document.save(out_f)
+                generated_bytes = out_f.getvalue()
+
+            except Exception as e:
+                logger.error(f"Failed to assemble dynamic document using RAG: {e}")
+                raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INTERNAL, message=str(e))
         else:
             bucket = storage.bucket()
 
@@ -1352,20 +1377,20 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
             from core.generator import generate_document_from_template
             try:
                 generated_bytes = generate_document_from_template(template_bytes, verified_data, required_tags)
+
+                # Parse docx for plain_text fallback
+                from docx import Document
+                import io
+                doc_parsed = Document(io.BytesIO(generated_bytes))
+                plain_text = '\n'.join([p.text for p in doc_parsed.paragraphs])
             except ValueError as ve:
                 raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message=str(ve))
+            except Exception as e:
+                logger.error(f"Failed to parse static docx for plain text: {e}")
+                plain_text = ""
 
         import base64
         base64_encoded = base64.b64encode(generated_bytes).decode('utf-8')
-
-        from docx import Document
-        import io
-        try:
-            doc_parsed = Document(io.BytesIO(generated_bytes))
-            plain_text = '\n'.join([p.text for p in doc_parsed.paragraphs])
-        except Exception as e:
-            logger.error(f"Failed to parse docx for plain text: {e}")
-            plain_text = ""
 
         return https_fn.Response(
             json.dumps({"status": "success", "file_base64": base64_encoded, "plain_text": plain_text}),
@@ -1452,8 +1477,8 @@ def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
         draft_id = data.get("draft_id")
         role_mapping = data.get("role_mapping", {})
         selected_clause_ids = data.get("selected_clause_ids", [])
+        intent = data.get("intent", "")
 
-        from core.generator import preview_dynamic_document_text
         ground_truth = {}
         if draft_id:
              draft_doc = db.collection("minutas").document(draft_id).get()
@@ -1461,7 +1486,16 @@ def preview_dynamic_document(req: https_fn.Request) -> https_fn.Response:
                  ground_truth = draft_doc.to_dict()
 
         try:
-            plain_text = preview_dynamic_document_text(selected_clause_ids, role_mapping, ground_truth, verified_data, db)
+            from services.rag_service import RAGService
+            from services.llm_generation_service import LLMGenerationService
+            rag_service = RAGService()
+            llm_service = LLMGenerationService()
+            template = rag_service.retrieve_template(intent)
+
+            if not template:
+                raise ValueError(f"No RAG template found for intent: {intent}")
+
+            plain_text = llm_service.generate_document(intent, template, ground_truth)
         except ValueError as ve:
             return https_fn.Response(json.dumps({"error": {"code": "INVALID_ARGUMENT", "message": str(ve)}}), status=400, content_type="application/json")
 

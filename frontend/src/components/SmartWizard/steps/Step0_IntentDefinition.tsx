@@ -3,7 +3,7 @@ import { orchestrateDocument } from '../../../api/client';
 
 interface Props {
   groundTruth: any;
-  onOrchestrated: (response: any) => void;
+  onOrchestrated: (response: any, intentStr: string) => void;
 }
 
 const Step0_IntentDefinition: React.FC<Props> = ({ groundTruth, onOrchestrated }) => {
@@ -20,7 +20,7 @@ const Step0_IntentDefinition: React.FC<Props> = ({ groundTruth, onOrchestrated }
     try {
       const entities = groundTruth?.entities || groundTruth?._contexto_extraido?.entities || [];
       const response = await orchestrateDocument(intent, entities);
-      onOrchestrated(response);
+      onOrchestrated(response, intent);
     } catch (err: any) {
       console.error('Orchestrator Error:', err);
       setError(err.message || 'Erro ao processar intenção.');
