@@ -1,27 +1,32 @@
 import os
-from google.cloud import firestore
+from firebase_admin import firestore
 
 class RAGService:
     def __init__(self):
         try:
-            self.db = firestore.Client()
+            self.db = firestore.client()
         except Exception as e:
             print(f"Warning: RAGService could not initialize firestore client. Error: {e}")
             self.db = None
             
-    def get_template_by_id(self, template_id: str) -> dict:
+    def get_template_by_id(self, template_id: str) -> str:
         """Fetch a specific template by its ID."""
         if not self.db:
-            return None
+            raise ValueError(f"Template {template_id} not found in database. Database not initialized.")
             
         doc_ref = self.db.collection('rag_templates').document(template_id)
         doc = doc_ref.get()
         
         if doc.exists:
-            return doc.to_dict()
-        return None
+            data = doc.to_dict()
+            content = data.get('content')
+            if content is None:
+                raise ValueError(f"Template {template_id} has no 'content' field.")
+            return content
 
-    def retrieve_template(self, intent: str) -> dict:
+        raise ValueError(f"Template {template_id} not found in database.")
+
+    def retrieve_template(self, intent: str) -> str:
         """
         Retrieves the most relevant template based on the Escrevente's intent.
         For now, this uses a simple keyword matching approach (basic classification routing).

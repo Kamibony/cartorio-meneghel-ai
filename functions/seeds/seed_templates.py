@@ -1,5 +1,7 @@
 import os
-from google.cloud import firestore
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import firestore
 
 TEMPLATE_COMPRA_VENDA_CAIXA = """
 PROCURAÇÃO PÚBLICA que fazem: [OUTORGANTE_NOME].
@@ -20,9 +22,17 @@ def seed_templates():
     # Normally handled via ADC in GCP, or by providing explicit credentials.
     # We fall back to a default project if none is provided via env vars.
     try:
-        db = firestore.Client()
+        os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8080"
+        if not firebase_admin._apps:
+            from google.auth.credentials import AnonymousCredentials
+            firebase_admin.initialize_app(options={'projectId': 'demo-project'})
+
+        # We can directly instantiate the firestore Client with AnonymousCredentials since the emulator is running
+        from google.auth.credentials import AnonymousCredentials
+        from google.cloud import firestore as google_firestore
+        db = google_firestore.Client(project="demo-project", credentials=AnonymousCredentials())
     except Exception as e:
-        print(f"Warning: Could not initialize firestore client automatically. Ensure GOOGLE_APPLICATION_CREDENTIALS is set. Error: {e}")
+        print(f"Warning: Could not initialize firestore client automatically. Error: {e}")
         return
         
     collection_ref = db.collection('rag_templates')
