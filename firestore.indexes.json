@@ -16,6 +16,38 @@
         {
           "arrayConfig": "CONTAINS",
           "queryScope": "COLLECTION"
+        },
+        {
+          "vectorConfig": {
+            "dimension": 768,
+            "flat": {}
+          },
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "rag_templates",
+      "fieldPath": "embedding",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "vectorConfig": {
+            "dimension": 768,
+            "flat": {}
+          },
+          "queryScope": "COLLECTION"
         }
       ]
     }
