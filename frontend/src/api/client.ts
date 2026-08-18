@@ -1,6 +1,5 @@
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
 import { auth } from '../utils/firebase';
-import { ENV } from '../config/env';
 
 export interface AppError {
   code: string | number;
