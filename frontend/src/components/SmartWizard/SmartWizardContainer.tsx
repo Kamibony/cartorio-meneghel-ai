@@ -205,7 +205,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         {state.currentStep === 0 && (
           <Step0_IntentDefinition
              groundTruth={normalizedGroundTruth}
-             onOrchestrated={(response, intentStr) => {
+             onOrchestrated={(_response, intentStr) => {
                  handlePreview(intentStr);
              }}
           />

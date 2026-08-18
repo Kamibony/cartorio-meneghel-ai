@@ -16,7 +16,7 @@ const TemplateGeneratorInput: React.FC<TemplateGeneratorInputProps> = ({ groundT
     return (
       <SmartWizardContainer
         groundTruth={groundTruth}
-        draftId={draftId}
+        draftId={draftId ?? undefined}
         onGenerated={onGenerated}
       />
     );
