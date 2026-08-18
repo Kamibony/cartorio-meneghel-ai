@@ -10,6 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 export interface WizardState {
   currentStep: number;
+  intent: string;
   orchestratorResponse: any | null;
   clauseFormData: Record<string, string>;
   roleMapping: Record<string, string[]>;
@@ -23,7 +24,7 @@ type WizardAction =
   | { type: 'NEXT_STEP' }
   | { type: 'PREV_STEP' }
   | { type: 'SET_STEP'; payload: number }
-  | { type: 'SET_ORCHESTRATOR_RESPONSE'; payload: any }
+  | { type: 'SET_ORCHESTRATOR_RESPONSE'; payload: { response: any; intent: string } }
   | { type: 'UPDATE_CLAUSE_FORM_DATA'; payload: { tag: string; value: string } }
   | { type: 'UPDATE_ROLE_MAPPING'; payload: { role: string; entityIds: string[] } }
   | { type: 'AUTOFILL_CLAUSE_FORM_DATA'; payload: Record<string, string> }
@@ -35,6 +36,7 @@ type WizardAction =
 
 const initialState: WizardState = {
   currentStep: 0,
+  intent: '',
   orchestratorResponse: null,
   clauseFormData: {},
   roleMapping: {},
@@ -55,9 +57,10 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case 'SET_ORCHESTRATOR_RESPONSE':
       return {
         ...state,
-        orchestratorResponse: action.payload,
+        intent: action.payload.intent,
+        orchestratorResponse: action.payload.response,
         clauseFormData: {},
-        roleMapping: action.payload?.role_mapping || {},
+        roleMapping: action.payload.response?.role_mapping || {},
         error: null,
         generatedText: null,
         generatedFileUrl: null
@@ -231,6 +234,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       const payload = {
         cartorio_id: cartorioId,
         template_id: "DYNAMIC_CLAUSES",
+        intent: state.intent,
         verified_data: state.clauseFormData,
         role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
@@ -265,6 +269,7 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       const payload = {
         cartorio_id: cartorioId,
         template_id: "DYNAMIC_CLAUSES", // Dummy template ID for now to bypass static templates requirement in backend
+        intent: state.intent,
         verified_data: state.clauseFormData,
         role_mapping: state.roleMapping,
         selected_clause_ids: state.orchestratorResponse?.selected_clause_ids || [],
@@ -326,8 +331,8 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         {state.currentStep === 0 && (
           <Step0_IntentDefinition
              groundTruth={normalizedGroundTruth}
-             onOrchestrated={(res) => {
-                 dispatch({ type: 'SET_ORCHESTRATOR_RESPONSE', payload: res });
+             onOrchestrated={(res, intentStr) => {
+                 dispatch({ type: 'SET_ORCHESTRATOR_RESPONSE', payload: { response: res, intent: intentStr } });
                  nextStep();
              }}
           />
