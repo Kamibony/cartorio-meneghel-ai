@@ -168,6 +168,10 @@ def vectorize_text(text: str) -> list:
     """
     Generates vector embeddings for a given text using Vertex AI.
     """
+    # Use mock embeddings in local/CI environments where real Google Auth isn't present
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and os.environ.get("FIRESTORE_EMULATOR_HOST"):
+        return [0.1] * 768
+
     try:
         project_id = os.environ.get("FIREBASE_PROJECT_ID", "cartorio-meneghel-ai")
         location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")

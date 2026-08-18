@@ -28,22 +28,41 @@ class RAGService:
 
     def retrieve_template(self, intent: str) -> str:
         """
-        Retrieves the most relevant template based on the Escrevente's intent.
-        For now, this uses a simple keyword matching approach (basic classification routing).
-        In the future, this can be upgraded to semantic vector search.
+        Retrieves the most relevant template based on the Escrevente's intent
+        using semantic vector search against the 'rag_templates' collection.
         """
         if not self.db:
             return None
             
-        intent_lower = intent.lower()
+        from core.generator import vectorize_text
+        from google.cloud.firestore_v1.vector import Vector
+        from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+
+        intent_vector = vectorize_text(intent)
+        if not intent_vector:
+            print(f"Could not vectorize intent: '{intent}'")
+            return None
+
+        templates_ref = self.db.collection("rag_templates")
         
-        # Simple heuristic routing based on intent keywords
-        if any(keyword in intent_lower for keyword in ["veículo", "carro", "detran"]):
-            return self.get_template_by_id("TEMPLATE_VENDA_VEICULO")
+        try:
+            vector_query = templates_ref.find_nearest(
+                vector_field="embedding",
+                query_vector=Vector(intent_vector),
+                distance_measure=DistanceMeasure.COSINE,
+                limit=1,
+            )
             
-        if any(keyword in intent_lower for keyword in ["imóvel", "caixa", "cef", "financiamento"]):
-            return self.get_template_by_id("TEMPLATE_COMPRA_VENDA_CAIXA")
+            results = vector_query.get()
             
-        # Default fallback or return None if no match
-        print(f"Could not classify intent: '{intent}'")
-        return None
+            for doc in results:
+                data = doc.to_dict()
+                content = data.get('content')
+                if content:
+                    return content
+
+            print(f"No matching templates found for intent: '{intent}'")
+            return None
+        except Exception as e:
+            print(f"Error performing vector search for templates: {e}")
+            return None

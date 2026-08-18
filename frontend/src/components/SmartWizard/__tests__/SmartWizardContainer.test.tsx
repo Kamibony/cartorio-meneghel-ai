@@ -7,12 +7,7 @@ jest.mock('../steps/Step0_IntentDefinition', () => {
   return function DummyStep0({ onOrchestrated }: any) {
     return (
       <div data-testid="step0">
-        <button onClick={() => onOrchestrated({
-           selected_clause_ids: ['clause1'],
-           required_variables: [
-             { name: 'NOME_COMPLETO', type: 'string' }
-           ]
-        })}>
+        <button onClick={() => onOrchestrated(null, "Test Intent")}>
           Submit Intent
         </button>
       </div>
@@ -20,26 +15,12 @@ jest.mock('../steps/Step0_IntentDefinition', () => {
   };
 });
 
-jest.mock('../steps/Step1_AIProposal', () => {
-  return function DummyStep1({ onNext }: any) {
+jest.mock('../steps/Step1_ReviewDocument', () => {
+  return function DummyStep1({ onGenerate, generatedText }: any) {
     return (
       <div data-testid="step1">
-        <button onClick={onNext}>Next to Review</button>
-      </div>
-    );
-  };
-});
-
-jest.mock('../steps/Step2_ReviewAndGenerate', () => {
-  return function DummyStep2({ finalPayload, onOverride, requiredVariables }: any) {
-    return (
-      <div data-testid="step2">
-         {requiredVariables.map((v: any) => (
-           <div key={v.name} data-testid={`payload-${v.name}`}>
-              {finalPayload[v.name] || ''}
-              <button onClick={() => onOverride(v.name, 'TEST_VALUE')}>Set Value</button>
-           </div>
-         ))}
+         <div data-testid="generated-text">{generatedText || ''}</div>
+         <button onClick={onGenerate}>Generate Document</button>
       </div>
     );
   };
@@ -50,7 +31,7 @@ jest.mock('../../../contexts/AuthContext', () => ({
 }));
 
 describe('SmartWizardContainer', () => {
-  it('navigates through intent, proposal and populates final payload dynamically', () => {
+  it('navigates through intent to review phase', () => {
     const groundTruth = { entities: [] };
 
     render(<SmartWizardContainer groundTruth={groundTruth} onGenerated={jest.fn()} />);
@@ -59,15 +40,7 @@ describe('SmartWizardContainer', () => {
     expect(screen.getByTestId('step0')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Submit Intent'));
 
-    // Step 1: AI Proposal
+    // Step 1: Review Document
     expect(screen.getByTestId('step1')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Next to Review'));
-
-    // Step 2: Review and Generate
-    expect(screen.getByTestId('step2')).toBeInTheDocument();
-
-    // Simulate setting a value dynamically
-    fireEvent.click(screen.getByText('Set Value'));
-    expect(screen.getByTestId('payload-NOME_COMPLETO')).toHaveTextContent('TEST_VALUE');
   });
 });
