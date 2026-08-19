@@ -16,13 +16,6 @@
         {
           "arrayConfig": "CONTAINS",
           "queryScope": "COLLECTION"
-        },
-        {
-          "vectorConfig": {
-            "dimension": 768,
-            "flat": {}
-          },
-          "queryScope": "COLLECTION"
         }
       ]
     },
@@ -40,13 +33,6 @@
         },
         {
           "arrayConfig": "CONTAINS",
-          "queryScope": "COLLECTION"
-        },
-        {
-          "vectorConfig": {
-            "dimension": 768,
-            "flat": {}
-          },
           "queryScope": "COLLECTION"
         }
       ]
