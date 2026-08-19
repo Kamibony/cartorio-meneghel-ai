@@ -3,6 +3,7 @@ import json
 from google import genai
 from core.firebase_utils import _init_firebase
 from firebase_admin import firestore
+from google.cloud.firestore_v1.vector import Vector
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -69,7 +70,7 @@ def main():
     data = {
         "content": TEMPLATE_TEXT,
         "description": TEMPLATE_DESCRIPTION,
-        "embedding": embedding,
+        "embedding": Vector(embedding),
         "updatedAt": firestore.SERVER_TIMESTAMP
     }
 
