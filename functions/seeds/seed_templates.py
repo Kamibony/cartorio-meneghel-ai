@@ -53,13 +53,30 @@ def seed_templates():
     ]
 
     print(f"Seeding {len(templates_to_seed)} templates to the 'rag_templates' collection...")
+
+    # Import vectorization tools
+    from core.generator import vectorize_text
+    from google.cloud.firestore_v1.vector import Vector
+
     for tpl in templates_to_seed:
+        # Generate embedding
+        embedding_input = f"Description: {tpl['description']}\nContent: {tpl['content']}"
+        embedding_vector = vectorize_text(embedding_input)
+
         doc_ref = collection_ref.document(tpl["id"])
-        doc_ref.set({
+
+        doc_data = {
             "content": tpl["content"],
             "intent_keywords": tpl["intent_keywords"],
             "description": tpl["description"]
-        })
+        }
+
+        if embedding_vector:
+            doc_data["embedding"] = Vector(embedding_vector)
+        else:
+            print(f"Warning: Could not vectorize template {tpl['id']}")
+
+        doc_ref.set(doc_data)
         print(f"Successfully seeded: {tpl['id']}")
         
     print("Seeding complete.")
