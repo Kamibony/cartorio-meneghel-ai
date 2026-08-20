@@ -229,6 +229,11 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
           <Step0_IntentDefinition
              groundTruth={normalizedGroundTruth}
              onOrchestrated={(response, intentStr) => {
+                 if (!response || !response.clauses) {
+                     alert("Falha ao gerar rascunho. Tente novamente.");
+                     dispatch({ type: 'GENERATION_ERROR', payload: "Falha ao gerar rascunho. Tente novamente." });
+                     return;
+                 }
                  dispatch({ type: 'SET_INTENT', payload: intentStr });
                  dispatch({ type: 'SET_ORCHESTRATION_DATA', payload: { clauses: response.clauses || [], fields: response.required_variables || [] } });
                  dispatch({ type: 'NEXT_STEP' });
