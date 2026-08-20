@@ -1,4 +1,7 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+const fs = require('fs');
+const path = 'frontend/src/components/SmartWizard/__tests__/SmartWizardContainer.test.tsx';
+
+let content = `import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SmartWizardContainer from '../SmartWizardContainer';
 
 // Mock the components used in the steps
@@ -58,6 +61,10 @@ describe('SmartWizardContainer', () => {
     fireEvent.click(screen.getByTestId('next-btn'));
 
     // Step 2 should be rendered
-    // Step 2 needs an active API response, test bypass or check loading state instead.
+    await waitFor(() => {
+      expect(screen.getByTestId('step2')).toBeInTheDocument();
+    });
   });
-});
+});`;
+
+fs.writeFileSync(path, content, 'utf8');
