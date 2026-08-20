@@ -28,7 +28,8 @@ class LLMGenerationService:
         2. Injete os dados do <GROUND_TRUTH> de forma natural e com a gramática correta (concordância de gênero/número).
         3. Adapte os poderes/escopo do documento APENAS com base na <INTENCAO>. Não alucine poderes extras.
         4. Se um dado essencial estiver faltando no Ground Truth, não use [DADO FALTANTE]. Adapte a frase para fluir naturalmente sem ele.
-        5. Retorne APENAS o texto final gerado, sem formatação markdown e sem explicações.
+        5. Preserve formatação importante como negrito e itálico usando Markdown básico (ex: **texto em negrito**, *texto em itálico*).
+        6. Retorne APENAS o texto final gerado, com a formatação em Markdown, mas sem blocos de código de formatação englobando o texto.
         </REGRAS_CRITICAS>
 
         <INTENCAO>
