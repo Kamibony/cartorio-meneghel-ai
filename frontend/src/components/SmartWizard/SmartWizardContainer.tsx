@@ -229,6 +229,12 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
           <Step0_IntentDefinition
              groundTruth={normalizedGroundTruth}
              onOrchestrated={(response, intentStr) => {
+                 if (!response) {
+                     // Provide a fallback or log the error
+                     console.error("Recebeu resposta nula de orchestrate_document.");
+                     alert("Ocorreu um erro ao processar a intenção. Por favor, tente novamente.");
+                     return;
+                 }
                  dispatch({ type: 'SET_INTENT', payload: intentStr });
                  dispatch({ type: 'SET_ORCHESTRATION_DATA', payload: { clauses: response.clauses || [], fields: response.required_variables || [] } });
                  dispatch({ type: 'NEXT_STEP' });
