@@ -1,6 +1,7 @@
 import React, { useReducer, useEffect, useMemo } from 'react';
 import Step0_IntentDefinition from './steps/Step0_IntentDefinition';
-import Step1_ReviewDocument from './steps/Step1_ReviewDocument';
+import Step1_ClauseSelection from './steps/Step1_ClauseSelection';
+import Step2_ReviewDocument from './steps/Step2_ReviewDocument';
 import { auth } from '../../utils/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { ENV } from '../../config/env';
@@ -15,6 +16,9 @@ interface SmartWizardContainerProps {
 interface WizardState {
   currentStep: number;
   intent: string;
+  selectedClauses: any[];
+  wizardFields: any[];
+  wizardValues: Record<string, any>;
   isGenerating: boolean;
   generatedText: string | null;
   generatedFileUrl: string | null;
@@ -23,6 +27,8 @@ interface WizardState {
 
 type WizardAction =
   | { type: 'SET_INTENT'; payload: string }
+  | { type: 'SET_ORCHESTRATION_DATA'; payload: { clauses: any[], fields: any[] } }
+  | { type: 'SET_WIZARD_VALUES'; payload: Record<string, any> }
   | { type: 'START_GENERATION' }
   | { type: 'PREVIEW_SUCCESS'; payload: string }
   | { type: 'GENERATION_SUCCESS'; payload: { text: string; fileUrl: string } }
@@ -34,6 +40,9 @@ type WizardAction =
 const initialState: WizardState = {
   currentStep: 0,
   intent: '',
+  selectedClauses: [],
+  wizardFields: [],
+  wizardValues: {},
   isGenerating: false,
   generatedText: null,
   generatedFileUrl: null,
@@ -56,6 +65,10 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
     case 'SET_INTENT':
       return { ...state, intent: action.payload };
+    case 'SET_ORCHESTRATION_DATA':
+      return { ...state, selectedClauses: action.payload.clauses, wizardFields: action.payload.fields };
+    case 'SET_WIZARD_VALUES':
+      return { ...state, wizardValues: action.payload };
     case 'START_GENERATION':
       return { ...state, isGenerating: true, error: null, generatedText: null, generatedFileUrl: null };
     case 'PREVIEW_SUCCESS':
@@ -65,7 +78,7 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case 'GENERATION_ERROR':
       return { ...state, isGenerating: false, error: action.payload };
     case 'NEXT_STEP':
-      return { ...state, currentStep: Math.min(state.currentStep + 1, 1) };
+      return { ...state, currentStep: Math.min(state.currentStep + 1, 2) };
     case 'PREV_STEP':
       return { ...state, currentStep: Math.max(state.currentStep - 1, 0) };
     case 'RESET':
@@ -102,11 +115,9 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
     sessionStorage.setItem('wizard_state', JSON.stringify(state));
   }, [state]);
 
-  const handlePreview = async (intentStr: string) => {
+  const handlePreview = async () => {
     if (!cartorioId) return;
 
-    dispatch({ type: 'SET_INTENT', payload: intentStr });
-    dispatch({ type: 'NEXT_STEP' });
     dispatch({ type: 'START_GENERATION' });
 
     try {
@@ -116,7 +127,9 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       const payload = {
         cartorio_id: cartorioId,
         template_id: "DYNAMIC_CLAUSES",
-        intent: intentStr,
+        intent: state.intent,
+        selected_clause_ids: state.selectedClauses.map((c: any) => c.id),
+        role_mapping: state.wizardValues,
         ground_truth: normalizedGroundTruth,
         draft_id: draftId || normalizedGroundTruth?.document_id || null,
         imported_at: normalizedGroundTruth?.updatedAt ? {
@@ -130,9 +143,10 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
 
       if (result.status === 'success' && result.preview_text !== undefined) {
           dispatch({ type: 'PREVIEW_SUCCESS', payload: result.preview_text });
+          dispatch({ type: 'NEXT_STEP' });
       } else if (result.status === 'success' && result.plain_text !== undefined) {
-          // Fallback if the backend returns plain_text instead of preview_text
           dispatch({ type: 'PREVIEW_SUCCESS', payload: result.plain_text });
+          dispatch({ type: 'NEXT_STEP' });
       } else {
           throw new Error("Resposta inválida do servidor.");
       }
@@ -153,6 +167,8 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
         cartorio_id: cartorioId,
         template_id: "DYNAMIC_CLAUSES",
         intent: state.intent,
+        selected_clause_ids: state.selectedClauses.map((c: any) => c.id),
+        role_mapping: state.wizardValues,
         ground_truth: normalizedGroundTruth,
         draft_id: draftId || normalizedGroundTruth?.document_id || null,
         imported_at: normalizedGroundTruth?.updatedAt ? {
@@ -198,20 +214,36 @@ const SmartWizardContainer: React.FC<SmartWizardContainerProps> = ({ groundTruth
       <div className="mb-4 flex space-x-2 text-xs font-semibold text-gray-500 overflow-x-auto whitespace-nowrap pb-1">
           <span className={state.currentStep >= 0 ? 'text-blue-600' : ''}>0. Intenção</span>
           <span>&gt;</span>
-          <span className={state.currentStep >= 1 ? 'text-blue-600' : ''}>1. Revisão</span>
+          <span className={state.currentStep >= 1 ? 'text-blue-600' : ''}>1. Seleção e Mapeamento</span>
+          <span>&gt;</span>
+          <span className={state.currentStep >= 2 ? 'text-blue-600' : ''}>2. Revisão</span>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {state.currentStep === 0 && (
           <Step0_IntentDefinition
              groundTruth={normalizedGroundTruth}
-             onOrchestrated={(_response, intentStr) => {
-                 handlePreview(intentStr);
+             onOrchestrated={(response, intentStr) => {
+                 dispatch({ type: 'SET_INTENT', payload: intentStr });
+                 dispatch({ type: 'SET_ORCHESTRATION_DATA', payload: { clauses: response.clauses || [], fields: response.required_variables || [] } });
+                 dispatch({ type: 'NEXT_STEP' });
              }}
           />
         )}
         {state.currentStep === 1 && (
-          <Step1_ReviewDocument
+          <Step1_ClauseSelection
+             groundTruth={normalizedGroundTruth}
+             selectedClauses={state.selectedClauses}
+             wizardFields={state.wizardFields}
+             wizardValues={state.wizardValues}
+             onUpdateValues={(values) => dispatch({ type: 'SET_WIZARD_VALUES', payload: values })}
+             onPrev={() => dispatch({ type: 'PREV_STEP' })}
+             onNext={() => handlePreview()}
+             isGenerating={state.isGenerating}
+          />
+        )}
+        {state.currentStep === 2 && (
+          <Step2_ReviewDocument
             onGenerate={handleGenerate}
             isGenerating={state.isGenerating}
             error={state.error}

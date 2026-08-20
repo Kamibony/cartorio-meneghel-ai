@@ -10,7 +10,7 @@ interface Props {
   onPrev: () => void;
 }
 
-const Step1_ReviewDocument: React.FC<Props> = ({
+const Step2_ReviewDocument: React.FC<Props> = ({
     onGenerate,
     isGenerating,
     error,
@@ -85,4 +85,4 @@ const Step1_ReviewDocument: React.FC<Props> = ({
   );
 };
 
-export default Step1_ReviewDocument;
+export default Step2_ReviewDocument;
