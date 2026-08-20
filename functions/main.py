@@ -476,7 +476,16 @@ Your task is twofold:
             ),
         )
 
-        parsed_response = json.loads(response.text)
+        try:
+            parsed_response = json.loads(response.text)
+        except json.JSONDecodeError as jde:
+            logger.error(f"LLM returned malformed JSON: {response.text}", exc_info=True)
+            return https_fn.Response(
+                json.dumps({"error": "A IA retornou um formato inválido. Por favor, tente novamente."}),
+                status=500,
+                content_type="application/json"
+            )
+
         llm_selected_ids = parsed_response.get("selected_clause_ids", [])
 
         # Robust intersection check to prevent hallucination
@@ -1335,14 +1344,25 @@ def generate_document_api(req: https_fn.Request) -> https_fn.Response:
 
                 plain_text = llm_service.generate_document(intent, template, ground_truth)
 
-                # Convert LLM plain text to a DOCX byte array
+                # Convert LLM Markdown text to a DOCX byte array
                 from docx import Document
                 import io
+                import re
 
                 document = Document()
                 for line in plain_text.split('\n'):
-                    if line.strip():
-                        document.add_paragraph(line)
+                    line = line.strip()
+                    if line:
+                        p = document.add_paragraph()
+                        # Very lightweight markdown parser for bold (**) and italics (*)
+                        parts = re.split(r'(\*\*[^*]+\*\*|\*[^*]+\*)', line)
+                        for part in parts:
+                            if part.startswith('**') and part.endswith('**'):
+                                p.add_run(part[2:-2]).bold = True
+                            elif part.startswith('*') and part.endswith('*'):
+                                p.add_run(part[1:-1]).italic = True
+                            else:
+                                p.add_run(part)
 
                 out_f = io.BytesIO()
                 document.save(out_f)

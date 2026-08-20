@@ -80,7 +80,12 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case 'NEXT_STEP':
       return { ...state, currentStep: Math.min(state.currentStep + 1, 2) };
     case 'PREV_STEP':
-      return { ...state, currentStep: Math.max(state.currentStep - 1, 0) };
+      const newStep = Math.max(state.currentStep - 1, 0);
+      if (newStep === 0) {
+          // If going back to intent, clear orphaned variables to prevent state leak
+          return { ...state, currentStep: newStep, wizardValues: {}, generatedText: null, generatedFileUrl: null };
+      }
+      return { ...state, currentStep: newStep };
     case 'RESET':
       return initialState;
     default:

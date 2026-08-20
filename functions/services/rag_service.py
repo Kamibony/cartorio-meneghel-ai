@@ -1,12 +1,15 @@
 import os
+import logging
 from firebase_admin import firestore
+
+logger = logging.getLogger(__name__)
 
 class RAGService:
     def __init__(self):
         try:
             self.db = firestore.client()
         except Exception as e:
-            print(f"Warning: RAGService could not initialize firestore client. Error: {e}")
+            logger.error(f"Warning: RAGService could not initialize firestore client. Error: {e}")
             self.db = None
             
     def get_template_by_id(self, template_id: str) -> str:
@@ -40,8 +43,8 @@ class RAGService:
 
         intent_vector = vectorize_text(intent)
         if not intent_vector:
-            print(f"Could not vectorize intent: '{intent}'")
-            return None
+            logger.error(f"Could not vectorize intent: '{intent}'")
+            raise ValueError(f"Failed to generate vector embedding for intent: '{intent}'")
 
         templates_ref = self.db.collection("rag_templates")
         
@@ -61,8 +64,8 @@ class RAGService:
                 if content:
                     return content
 
-            print(f"No matching templates found for intent: '{intent}'")
+            logger.info(f"No matching templates found for intent: '{intent}'")
             return None
         except Exception as e:
-            print(f"Error performing vector search for templates: {e}")
-            return None
+            logger.error(f"Critical error performing vector search for templates: {e}", exc_info=True)
+            raise e
