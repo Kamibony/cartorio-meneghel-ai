@@ -922,7 +922,7 @@ def ingest_raw_clauses(req: https_fn.Request) -> https_fn.Response:
 
         saved_clauses = []
         batch = db.batch()
-        clauses_ref = db.collection("clauses")
+        clauses_ref = db.collection("rag_templates")
 
         # 2. Vectorize and prepare batch
         for clause_def in clauses:
@@ -942,7 +942,7 @@ def ingest_raw_clauses(req: https_fn.Request) -> https_fn.Response:
             clause_data = {
                 "id": doc_ref.id,
                 "title": title,
-                "text": text,
+                "content": text,
                 "required_variables": clause_def.get("required_variables", []),
                 "scope_tags": clause_def.get("scope_tags", []),
                 "embedding": Vector(embedding_vector),  # Important: use Firestore Vector type

@@ -227,10 +227,12 @@ def parse_clause_with_llm(raw_text: str) -> dict:
 You are an expert legal engineer for a Brazilian Cartório. Analyze the following raw legal document text.
 Break it down into logical, independent clauses. For each clause:
 1. Extract the core legal text.
-2. Replace specific entity names or details (like a person's name or a car's license plate) with standardized, STRICTLY NAMESPACED Jinja2 variables.
-   - Example: Instead of generic `{{{{NOME}}}}`, use `{{{{OUTORGANTE_NOME}}}}` or `{{{{COMPRADOR_NOME}}}}`.
-   - This strict namespacing is critical to prevent deduplication collisions later.
-3. Define these variables with their expected type ('entity', 'asset', 'string', 'number', 'date').
+2. Replace specific entity names, details, or dynamic portions (like a person's name or a car's license plate) with standardized, STRICTLY NAMESPACED Jinja2 tags.
+   - Example: Instead of generic `{{{{NOME}}}}`, you MUST use an ontology like `{{{{ROLE_ATTRIBUTE}}}}` (e.g., `{{{{OUTORGANTE_NOME}}}}`, `{{{{PROCURADOR_CPF}}}}`, ou `{{{{COMPRADOR_ESTADO_CIVIL}}}}`).
+   - This strict deterministic tagging rule is absolute and mandatory. You must output standard Jinja2 syntax.
+3. Extract and define these metadata variables under `required_variables` with their expected type ('entity', 'asset', 'string', 'number', 'date').
+
+Your output MUST be a strict structured JSON matching the provided schema, returning a list of clauses where the text contains these Jinja2 tags.
 
 Raw Legal Text:
 {raw_text}
@@ -270,10 +272,11 @@ Your task is to provide an auto-suggestion for a specific text field in a legal 
 
 Field Tag: {tag}
 
-Context Data (JSON):
+Context Data (JSON) [STRICTLY READ-ONLY]:
 {json.dumps(context_data, ensure_ascii=False, indent=2)}
 
 Please write a concise, formal, and grammatically correct text snippet suitable for insertion into a document draft.
+You must strictly use the provided read-only context data without ever modifying it or making up new data.
 Output ONLY the suggested text, nothing else. Do not include markdown blocks or introductory phrases.
 """
         response = client.models.generate_content(
@@ -285,18 +288,14 @@ Output ONLY the suggested text, nothing else. Do not include markdown blocks or 
         logger.error(f"Error suggesting field text: {e}")
         raise e
 
-def assemble_dynamic_document(selected_clause_ids: list, role_mapping: dict, ground_truth: dict, verified_data: dict, db) -> bytes:
+def assemble_dynamic_document(selected_clause_ids: list, role_mapping: dict, ground_truth: dict, verified_data: dict, db, intent: str = "") -> bytes:
     """
-    Assembles a document dynamically from a list of clause IDs deterministically, bypassing the LLM.
+    Assembles a document dynamically from a list of clause IDs using LLMGenerationService.
     """
     try:
-        from core.resolver import DocumentResolver
-        resolver = DocumentResolver()
-
         from docx import Document
         import io
 
-        # We handle empty list edge case manually here to return empty docx as it did before.
         if not selected_clause_ids:
             document = Document()
             document.add_heading('MINUTA GERADA', 0)
@@ -314,20 +313,56 @@ def assemble_dynamic_document(selected_clause_ids: list, role_mapping: dict, gro
 
             clauses.append(clause_doc.to_dict())
 
-        return resolver.assemble(clauses, role_mapping, ground_truth, verified_data)
+        from services.llm_generation_service import LLMGenerationService
+        llm_service = LLMGenerationService()
+
+        # Combine ground_truth and verified_data as they are both context
+        context_data = {**(ground_truth or {}), **(verified_data or {})}
+
+        markdown_text = llm_service.assemble_selected_clauses(intent, clauses, context_data, role_mapping)
+
+        document = Document()
+
+        import re
+
+        def process_markdown_paragraph(paragraph, text):
+            # Split text by bold and italics using basic regex
+            # We match **bold**, *italics*, __bold__, _italics_
+            parts = re.split(r'(\*\*.*?\*\*|\*.*?\*|__.*?__|_[^_]+_)', text)
+            for part in parts:
+                if part.startswith('**') and part.endswith('**'):
+                    run = paragraph.add_run(part[2:-2])
+                    run.bold = True
+                elif part.startswith('__') and part.endswith('__'):
+                    run = paragraph.add_run(part[2:-2])
+                    run.bold = True
+                elif part.startswith('*') and part.endswith('*'):
+                    run = paragraph.add_run(part[1:-1])
+                    run.italic = True
+                elif part.startswith('_') and part.endswith('_'):
+                    run = paragraph.add_run(part[1:-1])
+                    run.italic = True
+                else:
+                    paragraph.add_run(part)
+
+        for line in markdown_text.split('\n'):
+            if line.strip():
+                p = document.add_paragraph()
+                process_markdown_paragraph(p, line)
+
+        out_f = io.BytesIO()
+        document.save(out_f)
+        return out_f.getvalue()
 
     except Exception as e:
         logger.error(f"Error assembling dynamic document: {e}")
         raise ValueError(f"Failed to assemble dynamic document: {str(e)}")
 
-def preview_dynamic_document_text(selected_clause_ids: list, role_mapping: dict, ground_truth: dict, verified_data: dict, db) -> str:
+def preview_dynamic_document_text(selected_clause_ids: list, role_mapping: dict, ground_truth: dict, verified_data: dict, db, intent: str = "") -> str:
     """
-    Assembles a plain text string preview of a document dynamically from a list of clause IDs deterministically.
+    Assembles a plain text string preview of a document dynamically from a list of clause IDs using LLMGenerationService.
     """
     try:
-        from core.resolver import DocumentResolver
-        resolver = DocumentResolver()
-
         if not selected_clause_ids:
             return "MINUTA GERADA\n\nNenhuma cláusula selecionada para este documento."
 
@@ -340,7 +375,13 @@ def preview_dynamic_document_text(selected_clause_ids: list, role_mapping: dict,
 
             clauses.append(clause_doc.to_dict())
 
-        return resolver.assemble_text(clauses, role_mapping, ground_truth, verified_data)
+        from services.llm_generation_service import LLMGenerationService
+        llm_service = LLMGenerationService()
+
+        # Combine ground_truth and verified_data as they are both context
+        context_data = {**(ground_truth or {}), **(verified_data or {})}
+
+        return llm_service.assemble_selected_clauses(intent, clauses, context_data, role_mapping)
 
     except Exception as e:
         logger.error(f"Error assembling dynamic document text: {e}")
