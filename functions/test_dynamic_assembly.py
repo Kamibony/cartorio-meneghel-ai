@@ -46,7 +46,7 @@ def test_assemble_dynamic_document():
         mock_client.return_value = mock_instance
 
         mock_response = MagicMock()
-        mock_response.text = '{"COMPRADOR_NOME": "João Silva", "DETAILS": "Banco do Brasil"}'
+        mock_response.text = 'O comprador João Silva fez negócio com o Banco do Brasil.\n\nFim.'
         mock_instance.models.generate_content.return_value = mock_response
 
         try:
