@@ -393,7 +393,7 @@ def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
             return https_fn.Response(json.dumps({"error": "Failed to vectorize intent"}), status=500, content_type="application/json")
 
         db = firestore.client()
-        clauses_ref = db.collection("clauses")
+        clauses_ref = db.collection("rag_templates")
 
         # KNN vector search on Firestore
         vector_query = clauses_ref.find_nearest(
@@ -418,7 +418,7 @@ def orchestrate_document(req: https_fn.Request) -> https_fn.Response:
             candidates.append({
                 "id": doc.id,
                 "title": doc_data.get("title", ""),
-                "text": doc_data.get("text", ""),
+                "text": doc_data.get("content", ""),
                 "required_variables": doc_data.get("required_variables", [])
             })
 
@@ -494,8 +494,10 @@ Your task is twofold:
 
         # Aggregate required variables from the selected candidates
         required_variables_map = {}
+        selected_clauses = []
         for candidate in candidates:
             if candidate["id"] in final_selected_ids:
+                selected_clauses.append(candidate)
                 for var in candidate.get("required_variables", []):
                     # Dedup by variable name
                     var_name = var.get("name")
@@ -503,6 +505,7 @@ Your task is twofold:
                         required_variables_map[var_name] = var
 
         parsed_response["required_variables"] = list(required_variables_map.values())
+        parsed_response["clauses"] = selected_clauses
 
         return https_fn.Response(
             json.dumps(parsed_response),
