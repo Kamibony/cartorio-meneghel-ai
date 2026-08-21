@@ -66,12 +66,15 @@ class DataNormalizer:
 
     @staticmethod
     def normalize_string(text: str) -> str:
-        """Uppercase, remove extra spaces, strip accents, and apply smart normalization."""
+        """Uppercase, remove extra spaces, strip accents, strip markdown, and apply smart normalization."""
         if not text:
             return ""
         if not isinstance(text, str):
             text = str(text)
         text = text.upper()
+
+        # Strip markdown artifacts
+        text = re.sub(r'[*_#`]', '', text)
 
         # Strip gender suffixes like (A) or (O/A) BEFORE word stemming
         text = re.sub(r'\([AO](/[AO])?\)', '', text)
@@ -275,8 +278,14 @@ class DocumentValidator:
                     continue
 
                 # Deterministic anchor check
-                if error.found_in_text and error.found_in_text in self.typed_text:
-                    validated_discrepancies.append(error)
+                if error.found_in_text:
+                    norm_found_text = DataNormalizer.normalize_string(error.found_in_text)
+                    norm_typed = DataNormalizer.normalize_string(self.typed_text)
+                    if norm_found_text and norm_found_text in norm_typed:
+                        validated_discrepancies.append(error)
+                    else:
+                        logger.warning(f"Hallucination filtered: '{error.found_in_text}' not in raw text.")
+                        continue
                 else:
                     logger.warning(f"Hallucination filtered: '{error.found_in_text}' not in raw text.")
                     continue
@@ -294,14 +303,21 @@ class DocumentValidator:
                 # Check if the expected value is actually in the text
                 # We normalize both to prevent case/accent mismatches from bypassing the filter
                 if error.expected:
-                    norm_expected = normalize_string(str(error.expected))
-                    norm_text = normalize_string(self.typed_text)
+                    norm_expected = DataNormalizer.normalize_string(str(error.expected))
+                    norm_text = DataNormalizer.normalize_string(self.typed_text)
                     if norm_expected and norm_expected in norm_text:
                         logger.warning(f"Hallucination filtered: MISSING_FIELD for '{error.expected}', but found in text.")
                         continue
                 validated_discrepancies.append(error)
 
             elif error.category == "UNMATCHED_ENTITY":
+                # Reverse-hallucination check for entities
+                if error.expected:
+                    norm_expected = DataNormalizer.normalize_string(str(error.expected))
+                    norm_text = DataNormalizer.normalize_string(self.typed_text)
+                    if norm_expected and norm_expected in norm_text:
+                        logger.warning(f"Hallucination filtered: UNMATCHED_ENTITY for '{error.expected}', but found in text.")
+                        continue
                 validated_discrepancies.append(error)
 
             else:
