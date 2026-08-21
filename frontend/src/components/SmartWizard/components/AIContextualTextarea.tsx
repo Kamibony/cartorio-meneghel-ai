@@ -23,7 +23,7 @@ const AIContextualTextarea: React.FC<Props> = ({ tag, value, onChange, groundTru
 
     try {
       // The direct backend Cloud Run API URL pattern
-      const endpoint = `${ENV.generateApiUrl}/suggest_field_text`;
+      const endpoint = `${ENV.suggestApiUrl}/suggest_field_text`;
 
       const payload = {
         cartorio_id: cartorioId,

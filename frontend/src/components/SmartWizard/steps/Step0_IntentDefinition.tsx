@@ -19,7 +19,7 @@ const Step0_IntentDefinition: React.FC<Props> = ({ groundTruth, onOrchestrated }
     setIsSubmitting(true);
     setError(null);
     try {
-      const endpoint = `${ENV.generateApiUrl}/orchestrate_document`;
+      const endpoint = `${ENV.orchestrateApiUrl}/orchestrate_document`;
       const payload = {
         intent,
         entities: groundTruth?.entities || [],

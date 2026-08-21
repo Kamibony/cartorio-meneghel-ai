@@ -34,6 +34,20 @@ export const ENV = {
     }
     return this.apiUrl;
   },
+  get orchestrateApiUrl() {
+    const configuredOrchestrateUrl = import.meta.env.VITE_ORCHESTRATE_API_URL;
+    if (configuredOrchestrateUrl) {
+      return configuredOrchestrateUrl.replace(/\/$/, "");
+    }
+    return this.apiUrl;
+  },
+  get suggestApiUrl() {
+    const configuredSuggestUrl = import.meta.env.VITE_SUGGEST_API_URL;
+    if (configuredSuggestUrl) {
+      return configuredSuggestUrl.replace(/\/$/, "");
+    }
+    return this.apiUrl;
+  },
   firebase: {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "mock-key",
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
